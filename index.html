@@ -584,7 +584,7 @@ async function verResumen(head) {
         '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><span class="xs c-txt" style="font-weight:600">' + est + '</span></div>';
     }).join('') || '<div class="card small muted">Todavía no hay obras cargadas.</div>';
     const aus = r.ausentes.map(a => '<div class="row small"><span>' + esc(a.nombre) + ' <span class="muted">· ' + esc(a.legajo) + '</span></span><span class="muted">' + esc(a.obra) + '</span></div>').join('');
-    supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span></div>' +
+    supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><div class="row" style="gap:8px"><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span>' + (S.user.ubica ? '<button class="btn sm" data-act="nuevaUbicacion" style="height:36px;padding:0 10px">' + ICO.pin + ' Nueva ubicación</button>' : '') + '</div></div>' +
       '<div class="grid3"><div class="kpi"><span class="xs muted">Presentes</span><b style="color:var(--green)">' + r.presentes + '</b></div><div class="kpi"><span class="xs muted">Ausentes</span><b style="color:var(--red)">' + r.ausentes.length + '</b></div><div class="kpi"><span class="xs muted">Por autorizar</span><b style="color:#B57F00">' + r.pendientes + '</b></div></div>' +
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PRESENTES POR OBRA · CONTRA DOTACIÓN</span><div class="stack" style="gap:8px">' + obras + '</div>' +
       '<details class="card"><summary>Ausentes hoy (' + r.ausentes.length + ')</summary><div class="stack" style="gap:6px;margin-top:10px">' + (aus || '<span class="small muted">Nadie.</span>') + '</div></details>');
@@ -658,6 +658,24 @@ ACT.obraNueva = async function () {
   const n = prompt('Nombre de la obra nueva (como aparece en el tablero):');
   if (!n || !n.trim()) return;
   try { await api('obraGuardar', { nombre: n.trim() }); toast('Obra creada.'); volverObras(); } catch (e) { toast(e.message, 5000); }
+};
+
+ACT.nuevaUbicacion = async function (b) {
+  const nombre = prompt('Nombre de la obra nueva (como figura en el tablero).\nDespués se guarda tu ubicación actual como la de la obra: hacelo parado en el ingreso.');
+  if (!nombre || !nombre.trim()) return;
+  const txt = b.innerHTML;
+  b.disabled = true;
+  try {
+    const r = await api('obraGuardar', { nombre: nombre.trim() });
+    const pos = await gpsMejor(25, 25000, x => { b.innerHTML = 'GPS ±' + x.acc + ' m…'; });
+    if (pos.acc > 50) {
+      toast('Obra creada, pero el GPS marca ±' + pos.acc + ' m. Fijá la ubicación desde Obras cuando estés en un lugar abierto.', 7000);
+    } else {
+      await api('obraGuardar', { id: r.obra.id, ubicacion: { modo: 'gps', lat: pos.lat, lng: pos.lng, acc: pos.acc } });
+      toast('Obra «' + r.obra.nombre + '» creada con tu ubicación (±' + pos.acc + ' m).', 6000);
+    }
+    if (S.view === 'sup') go('sup', { tab: 'resumen' });
+  } catch (e) { toast(e.message, 6000); b.disabled = false; b.innerHTML = txt; }
 };
 
 V.obra = function (p) {
