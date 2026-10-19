@@ -385,7 +385,7 @@ function pantallaSalida(e, ab, enZona) {
   const otras = enZona.filter(o => o.id !== ab.obra_id);
   const desde = '<span class="small muted">Entrada en <b>' + esc(ab.obra) + '</b> a las ' + esc(ab.hora) + '</span>';
   const oculto = '<input type="hidden" id="fObra" value="' + esc(ab.obra_id) + '">';
-  if (ab.zona === 'ok') {
+  if (ab.zona === 'ok' && (ab.cerca || !otras.length)) {
     return '<div class="card ok row" style="justify-content:flex-start;gap:14px"><span style="color:var(--green)">' + ICO.pin + '</span><div><b>Estás en ' + esc(ab.obra) + '</b><div class="small" style="color:var(--green-text)">A ' + ab.dist + ' m de la obra · GPS ±' + e.acc + ' m</div></div></div>' + oculto +
       '<div class="grow" style="display:flex;align-items:center;justify-content:center"><button class="big out" data-act="fichar">' + ICO.out + '<b>SALIDA</b><small>Tocá para fichar</small></button></div>';
   }
