@@ -402,15 +402,9 @@ function pantallaSalida(e, ab, enZona) {
       '<label class="f">Motivo<textarea class="inp" id="fMotivo" maxlength="300" placeholder="Ej.: estoy en el obrador de enfrente"></textarea></label>' +
       '<button class="btn warn block" data-act="fichar">FICHAR SALIDA FUERA DE ZONA</button>';
   }
-  // Lejos de la obra: se olvidó de fichar la salida
-  const lejos = ab.dist != null ? kmTxt(ab.dist) : 'lejos';
-  if (ab.cerrable) {
-    return '<div class="card stack" style="gap:8px;background:var(--accent-soft);border-color:var(--accent-soft)"><b>¿Te olvidaste de fichar la salida?</b><span class="small">Estás a ' + lejos + ' de <b>' + esc(ab.obra) + '</b>' + (ab.fin ? ' y tu jornada terminó a las <b>' + esc(ab.fin) + '</b>' : '') + '. Podés cerrarla desde acá: se registra tu ubicación' + (ab.fin ? ' y las horas se cuentan hasta las ' + esc(ab.fin) : '') + '.</span></div>' + desde + oculto +
-      '<div class="grow" style="display:flex;align-items:center;justify-content:center"><button class="big out" data-act="fichar">' + ICO.out + '<b style="font-size:30px">CERRAR JORNADA</b><small>Fichar la salida de ' + esc(ab.obra) + '</small></button></div>';
-  }
-  return '<div class="card warn stack" style="gap:8px"><div class="row" style="justify-content:flex-start;gap:10px;color:#B57F00">' + ICO.warn + '<b style="color:var(--fg)">Estás lejos de la obra</b></div><span class="small">Estás a ' + lejos + ' de <b>' + esc(ab.obra) + '</b> y tu jornada termina a las <b>' + esc(ab.fin) + '</b>. Podés cerrarla desde acá: queda <b>pendiente</b>, se registra tu ubicación y se avisa a tus responsables.</span></div>' + desde + oculto +
-    '<label class="f">Motivo<textarea class="inp" id="fMotivo" maxlength="300" placeholder="Ej.: me mandaron a buscar material al corralón"></textarea></label>' +
-    '<button class="btn warn block" data-act="fichar">FICHAR SALIDA Y AVISAR</button>';
+  // Lejos de la obra: se ficha normal. Supervisión la revisa aparte (el empleado no ve ningún aviso).
+  return desde + oculto +
+    '<div class="grow" style="display:flex;align-items:center;justify-content:center"><button class="big out" data-act="fichar">' + ICO.out + '<b>SALIDA</b><small>Fichar la salida de ' + esc(ab.obra) + '</small></button></div>';
 }
 function kmTxt(m) { return m >= 1000 ? (Math.round(m / 100) / 10).toLocaleString('es-AR') + ' km' : m + ' m'; }
 function estadoTag(st) {
@@ -459,7 +453,7 @@ V.listo = function (p) {
     '<div class="h-display" style="font-size:64px;color:var(--accent)">' + esc(f.hora) + '</div><div class="muted">' + esc(f.obra) + ' · ' + fechaCorta(f.fecha).toLowerCase() + '</div></div>' +
     '<div class="card stack small" style="gap:8px">' +
     (p.cerrada ? '<div class="row"><span class="muted">Salida de ' + esc(p.cerrada.obra) + '</span><span>' + esc(p.cerrada.hora) + ' · cerrada sola</span></div>' : '') +
-    '<div class="row"><span class="muted">Ubicación</span><span>' + (ok && !f.causa ? 'A ' + esc(f.dist) + ' m · dentro de la zona' : esc(f.causaTxt)) + '</span></div>' +
+    '<div class="row"><span class="muted">Ubicación</span><span>' + (ok && !f.causa ? (f.dist !== '' && f.dist != null ? 'A ' + esc(f.dist) + ' m · dentro de la zona' : 'Registrada') : esc(f.causaTxt)) + '</span></div>' +
     '<div class="row"><span class="muted">Comprobante</span><span>' + esc(f.comprobante) + '</span></div>' +
     '<div class="row"><span class="muted">Estado</span><span style="color:' + (ok ? 'var(--green-text)' : 'var(--amber-text)') + ';font-weight:600">' + (ok ? 'Guardada' : 'Pendiente de aprobación') + '</span></div></div>' +
     '<div class="grow"></div>' +
@@ -712,12 +706,35 @@ function tarjetaPersona(x) {
     (fs ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">FICHADAS</span>' + fs : '') + '</div></details>';
 }
 
+function cardRevision(it, i) {
+  const acc = it.propia ? '<span class="xs muted">Es tuya: la tiene que revisar otra persona.</span>' :
+    '<div class="grid2"><button class="btn sm" data-act="revCorregir" data-i="' + i + '">Corregir hora</button><button class="btn sm ok" data-act="revOk" data-i="' + i + '">Está bien</button></div>';
+  const antes = it.antes && it.fin ? ' · <b style="color:var(--red)">antes del fin de la jornada</b>' : '';
+  return '<div class="item" style="border-color:#346CB6;border-left:4px solid #346CB6"><div class="row"><div><b>' + esc(it.nombre) + '</b><div class="xs muted">Legajo ' + esc(it.legajo) + ' · Salida · ' + fechaCorta(it.fecha) + '</div></div><span class="h-display t-m">' + esc(it.hora) + '</span></div>' +
+    '<span class="tag" style="background:#D9E8F8;color:#24508A;align-self:flex-start">Salida a revisar</span>' +
+    '<span class="small">' + esc(it.obra) + ' · ' + esc(it.causaTxt) + antes + '</span>' +
+    '<span class="xs muted">' + (it.entrada ? 'Entrada ' + esc(it.entrada) + ' · ' : '') + (it.fin ? 'fin de la jornada ' + esc(it.fin) : 'sin jornada ese día') + '. El empleado fichó normal y no ve esta revisión.</span>' +
+    mapaHtml(it, i) + acc + '</div>';
+}
+ACT.revOk = async function (b) {
+  const it = S.pendItems[b.dataset.i];
+  try { await api('revisarSalida', { id: it.id, accion: 'ok' }); toast('Salida revisada.'); volverPendientes(); } catch (e) { toast(e.message, 5000); }
+};
+ACT.revCorregir = async function (b) {
+  const it = S.pendItems[b.dataset.i];
+  const h = prompt('Hora real de salida de ' + it.nombre + ' (fichó a las ' + it.hora + '). Escribila como 16:30:', it.hora);
+  if (h === null) return;
+  const v = h.trim().replace('.', ':');
+  if (!/^\d{1,2}:\d{2}$/.test(v)) return toast('Escribí la hora como 16:30.');
+  try { await api('revisarSalida', { id: it.id, accion: 'corregir', hora: v.padStart(5, '0') }); toast('Hora corregida y horas recalculadas.', 5000); volverPendientes(); } catch (e) { toast(e.message, 5000); }
+};
 async function verPendientes(head) {
   cargando('Cargando pedidos…', MODO === 'celular' ? 'sup' : null);
   try {
     const r = await api('pendientes');
     S.pendItems = r.items;
     const card = (it, i) => {
+      if (it.kind === 'revision') return cardRevision(it, i);
       const sub = it.kind === 'fichada' ? 'Legajo ' + esc(it.legajo) + ' · ' + (it.tipo === 'in' ? 'Entrada' : 'Salida') + ' · ' + fechaCorta(it.fecha) : 'Legajo ' + esc(it.legajo) + ' · ' + fechaCorta(it.fecha) + (it.rango ? ' · ' + esc(it.rango) : '');
       let acc;
       if (it.propia) acc = '<span class="xs muted">Es tuya: la tiene que aprobar otra persona.</span>';
@@ -729,7 +746,7 @@ async function verPendientes(head) {
     const items = r.items.map(card).join('') || '<div class="card small muted">No hay nada para autorizar.</div>';
     const res = r.resueltas.map(it => '<div class="row small card" style="padding:10px 12px"><span>' + esc(it.nombre) + ' · ' + esc(it.kind === 'fichada' ? it.hora : '+' + it.horas + ' h') + '<br><span class="xs muted">' + esc(it.decidido_por) + '</span></span>' + estadoTag(it.estado) + '</div>').join('');
     setTimeout(() => r.items.forEach((it, i) => dibujarMapa(it, 'mapa' + i)), 0);
-    supShell(head, '<div><h1 class="h-display t-l">POR AUTORIZAR (' + r.items.length + ')</h1><span class="small muted">Fuera de zona, compañeros, ingreso anticipado y extras</span></div>' +
+    supShell(head, '<div><h1 class="h-display t-l">POR AUTORIZAR (' + r.items.length + ')</h1><span class="small muted">Fuera de zona, compañeros, salidas lejos, ingreso anticipado y extras</span></div>' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + items + '</div>' +
       (res ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px">RESUELTAS HOY</span><div class="stack" style="gap:6px">' + res + '</div>' : '') +
       '<p class="xs muted" style="margin:0">Si no se autoriza, solo se computa la jornada normal de la obra. Cada decisión queda registrada con tu usuario, fecha y hora. La sesión se cierra sola a los 5 minutos sin uso.</p>');
@@ -767,7 +784,7 @@ ACT.volverPend = volverPendientes;
 /* ---------- Mapa de dónde se fichó ---------- */
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 function mapaHtml(it, i) {
-  if (it.kind !== 'fichada' || !it.lat || !Number(it.lat)) return '';
+  if ((it.kind !== 'fichada' && it.kind !== 'revision') || !it.lat || !Number(it.lat)) return '';
   const gm = 'https://www.google.com/maps/search/?api=1&query=' + it.lat + ',' + it.lng;
   const dist = it.olat ? Math.round(distM(+it.lat, +it.lng, +it.olat, +it.olng)) : null;
   return '<div id="mapa' + i + '" style="height:220px;border-radius:10px;border:1px solid var(--line);background:var(--bg)"></div>' +
@@ -817,7 +834,7 @@ async function verObras(head) {
     const r = await api('obras');
     S.obras = r;
     const lista = r.obras.map((o, i) => '<a href="#" class="item" data-go="obra" data-p=\'{"i":' + i + '}\' style="text-decoration:none;color:inherit"><div class="row"><b>' + esc(o.nombre) + '</b><span class="xs muted">' + (o.activa ? '' : 'Inactiva') + '</span></div>' +
-      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + o.dotacion + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
+      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + o.dotacion + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
     supShell(head, '<div class="row"><h1 class="h-display t-l">OBRAS</h1>' + (r.puede.crear ? '<button class="btn sm" data-act="obraNueva">+ Nueva obra</button>' : '') + '</div>' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:8px">' + lista + '</div>');
   } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'obras'); }
@@ -863,13 +880,19 @@ V.obra = function (p) {
     '<div class="card stack small" style="gap:6px"><div class="row"><span class="muted">La obra aparece</span><span>a ' + S.obras.zonaVer + ' m</span></div><div class="row"><span class="muted">Se ficha normal</span><span>a ' + S.obras.zonaFichar + ' m</span></div></div>' +
     '<div class="stack" style="gap:8px"><b class="small">Personas asignadas a esta obra</b><div style="display:grid;grid-template-columns:54px minmax(0,1fr) 54px;gap:8px;align-items:center"><button class="btn" data-act="dot" data-d="-1" aria-label="Restar una persona">−</button><span class="h-display center" style="font-size:36px" id="oDot">' + o.dotacion + '</span><button class="btn" data-act="dot" data-d="1" aria-label="Sumar una persona">+</button></div>' +
     '<span class="xs muted">Semáforo: verde con la dotación completa, amarillo del 80 al 99 %, rojo por debajo del 80 %.</span><button class="btn sm" data-act="guardarDot">Guardar dotación</button></div>' +
-    (pu.horario ? '<div class="card stack" style="gap:8px"><b class="small">Horario de la obra · lunes a viernes</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
-      '<span class="xs muted">Mañana (inicio y fin) y tarde (inicio y fin). El almuerzo, entre la mañana y la tarde, se descuenta solo.</span><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div>' +
+    (pu.horario ? '<div class="card stack" style="gap:8px"><b class="small">Jornada de la obra</b>' +
+      '<select class="inp" id="hModo" style="height:46px"><option value=""' + (h.jornada === '44' ? '' : ' selected') + '>Lunes a viernes + sábado</option><option value="44"' + (h.jornada === '44' ? ' selected' : '') + '>44 h · lun a jue 9 h, vie 8 h, sin sábado</option></select>' +
+      '<b class="small" id="hLvTit">' + (h.jornada === '44' ? 'Lunes a jueves' : 'Lunes a viernes') + '</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
+      '<span class="xs muted">Mañana (inicio y fin) y tarde (inicio y fin). El almuerzo, entre la mañana y la tarde, se descuenta solo.</span>' +
+      '<div id="hVie" class="stack" style="gap:8px;' + (h.jornada === '44' ? '' : 'display:none') + '"><b class="small">Viernes · mismo inicio, termina a las</b>' + t('hVf', h.vie_t_fin) + '<span class="xs muted">El sábado no se trabaja: lo que se haga hasta las 13 es extra al 50 % y desde las 13 al 100 %, solo si se autoriza.</span></div>' +
+      '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div></div>' +
+      '<div class="row small"><span class="muted">Total semanal</span><b id="hSem">' + num(h.semanal) + ' h</b></div>' +
       '<span class="xs muted">Antes del inicio es ingreso anticipado y después del fin es extra: suman solo si se autorizan.</span><button class="btn sm" data-act="guardarHorario">Guardar horario</button></div>' : '') +
     '<label class="f">Mails para el aviso de salidas olvidadas (separados por coma)<input class="inp" id="oMails" value="' + esc(o.emails_avisos || '') + '"></label><button class="btn sm" data-act="guardarMails">Guardar mails</button>' +
     '<button class="btn dashed block" data-go="especial" data-p=\'{"i":' + p.i + '}\'>Autorizar una jornada especial (por ej. hormigonado desde las 06:00)</button>' +
     (esp ? '<div class="card stack" style="gap:6px"><b class="small">Jornadas especiales próximas</b>' + esp + '</div>' : '') +
     '<span class="xs muted center">Última modificación: ' + esc(o.modificado_por || '—') + ' · ' + esc(o.modificado_at || '') + '</span>');
+  horarioEventos();
 };
 ACT.volverObras = volverObras;
 ACT.dot = function (b) { const el = $('#oDot'); el.textContent = Math.max(0, (Number(el.textContent) || 0) + Number(b.dataset.d)); };
@@ -883,7 +906,24 @@ async function guardarObra(datos, msg) {
 ACT.guardarDot = () => guardarObra({ dotacion: Number($('#oDot').textContent) }, 'Dotación guardada.');
 ACT.guardarMails = () => guardarObra({ emails_avisos: $('#oMails').value }, 'Mails guardados.');
 ACT.guardarCoords = () => { const v = $('#oCoords').value.trim(); if (!v) return toast('Pegá las coordenadas o el link.'); guardarObra({ ubicacion: { modo: 'manual', texto: v } }, 'Ubicación guardada.'); };
-ACT.guardarHorario = () => guardarObra({ horario: { lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value } }, 'Horario guardado.');
+ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value } }, 'Horario guardado.');
+function hMin(v) { const p = String(v || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+function horarioSemanal() {
+  const m = hMin($('#hMf').value) - hMin($('#hMi').value), t = hMin($('#hTf').value) - hMin($('#hTi').value);
+  const tot = $('#hModo').value === '44' ? 4 * (m + t) + m + (hMin($('#hVf').value) - hMin($('#hTi').value)) : 5 * (m + t) + (hMin($('#hSf').value) - hMin($('#hSi').value));
+  $('#hSem').textContent = num(tot / 60) + ' h';
+}
+function horarioEventos() {
+  const md = $('#hModo'); if (!md) return;
+  md.onchange = () => {
+    const c = md.value === '44';
+    $('#hVie').style.display = c ? '' : 'none'; $('#hSab').style.display = c ? 'none' : '';
+    $('#hLvTit').textContent = c ? 'Lunes a jueves' : 'Lunes a viernes';
+    if (c && $('#hTf').value <= '17:00') { $('#hTf').value = '18:00'; $('#hVf').value = '17:00'; }
+    horarioSemanal();
+  };
+  ['hMi', 'hMf', 'hTi', 'hTf', 'hVf', 'hSi', 'hSf'].forEach(id => { const x = $('#' + id); if (x) x.oninput = horarioSemanal; });
+}
 ACT.fijarGps = async function (b) {
   if (!confirm('¿Estás parado en el ingreso de ' + S.obraSel.nombre + '? Se va a guardar tu ubicación actual como la de la obra.')) return;
   b.disabled = true;
