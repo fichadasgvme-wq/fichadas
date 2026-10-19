@@ -615,11 +615,14 @@ V.sup = function (p) {
   if (S.supTab === 'obras' && !S.user.aprueba) S.supTab = 'resumen';
   const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
+  if (S.user.gerencia) tabs.push(['pin', 'Celulares y PIN']);
+  if (S.supTab === 'pin' && !S.user.gerencia) S.supTab = 'resumen';
   const head = '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === S.supTab ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
   S.supHead = head;
   if (S.supTab === 'resumen') return verResumen(head);
   if (S.supTab === 'personas') return verPersonas(head, p || {});
   if (S.supTab === 'pendientes') return verPendientes(head);
+  if (S.supTab === 'pin') return verPin(head);
   return verObras(head);
 };
 function supShell(head, html) { shell((MODO === 'celular' ? head : '') + html, MODO === 'celular' ? 'sup' : null); }
@@ -637,6 +640,7 @@ async function verResumen(head) {
     const aus = r.ausentes.map(a => '<div class="row small"><span>' + esc(a.nombre) + ' <span class="muted">· ' + esc(a.legajo) + '</span></span><span class="muted">' + esc(a.obra) + '</span></div>').join('');
     supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span></div>' +
       '<div class="grid3"><div class="kpi"><span class="xs muted">Presentes</span><b style="color:var(--green)">' + r.presentes + '</b></div><div class="kpi"><span class="xs muted">Ausentes</span><b style="color:var(--red)">' + r.ausentes.length + '</b></div><div class="kpi"><span class="xs muted">Por autorizar</span><b style="color:#B57F00">' + r.pendientes + '</b></div></div>' +
+      avisoPedidos(r.pedidosGerencia) +
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PRESENTES POR OBRA · CONTRA DOTACIÓN</span><div class="stack" style="gap:8px">' + obras + '</div>' +
       '<details class="card"><summary>Ausentes hoy (' + r.ausentes.length + ')</summary><div class="stack" style="gap:6px;margin-top:10px">' + (aus || '<span class="small muted">Nadie.</span>') + '</div></details>');
   } catch (e) { errorBox(e.message, 'sup', 'sup'); }
@@ -943,6 +947,7 @@ V.planilla = async function (p) {
     shell('<div class="row" style="flex-wrap:wrap"><div><h1 class="h-display" style="font-size:40px">PLANILLA RESUMEN</h1><span class="muted">Presentes por obra contra dotación, y ausentes del día</span></div>' +
       '<div class="row"><label class="f">Día<input class="inp" type="date" id="pF" value="' + fecha + '" style="height:44px"></label><button class="btn sm" data-act="planExcel" style="align-self:flex-end">Descargar Excel</button></div></div>' +
       '<div class="kpis">' + kp('Presentes', r.presentes, 'de ' + r.asignados + ' asignados', 'var(--green)') + kp('Ausentes', r.ausentes.length, 'asignados sin entrada', 'var(--red)') + kp('Por autorizar', r.pendientes, 'fuera de zona, compañeros, anticipados y extras', '#B57F00') + kp('Sin salida ayer', r.sinSalidaAyer, 'avisado a los responsables', 'var(--fg)') + '</div>' +
+      avisoPedidos(r.pedidosGerencia) +
       '<span class="small muted" style="font-weight:600;letter-spacing:1px">SEMANA · PRESENTES Y AUSENTES POR DÍA</span><div class="kpis">' + sem + '</div>' +
       '<span class="small muted" style="font-weight:600;letter-spacing:1px">PRESENTES POR OBRA</span><div class="tblwrap"><table class="tbl"><thead><tr><th>Obra</th><th>Asignados</th><th>Presentes</th><th>Diferencia</th><th>Semáforo</th></tr></thead><tbody>' + (obras || '<tr><td colspan="5" class="muted">Sin obras</td></tr>') + '</tbody></table></div>' +
       '<span class="small muted" style="font-weight:600;letter-spacing:1px">AUSENTES DEL DÍA (' + r.ausentes.length + ')</span><div class="tblwrap"><table class="tbl"><thead><tr><th>Legajo</th><th>Nombre</th><th>Categoría</th><th>Grupo</th><th>Obra asignada</th><th>Última fichada</th></tr></thead><tbody>' + (aus || '<tr><td colspan="6" class="muted">Nadie</td></tr>') + '</tbody></table></div>');
@@ -1024,32 +1029,44 @@ ACT.impConfirmar = async function (b) {
   } catch (e) { toast(e.message, 6000); b.disabled = false; b.textContent = 'REINTENTAR'; }
 };
 
-V.pin = async function () {
-  if (!S.user.gerencia) return go('planilla');
-  cargando('Cargando pedidos…');
+function avisoPedidos(n) {
+  if (!n || !S.user.gerencia) return '';
+  const dest = MODO === 'celular' ? 'data-go="sup" data-p=\'{"tab":"pin"}\'' : 'data-go="pin"';
+  return '<a href="#" ' + dest + ' class="card row" style="text-decoration:none;color:inherit;border-color:var(--amber);background:var(--amber-soft)"><span><b>' + n + ' pedido' + (n > 1 ? 's' : '') + ' de celular o PIN</b><br><span class="small" style="color:var(--amber-text)">Esperan que Gerencia los apruebe</span></span><span style="color:var(--amber-text);font-weight:600">Ver ›</span></a>';
+}
+function volverPin() { if (MODO === 'celular') go('sup', { tab: 'pin' }); else go('pin'); }
+V.pin = () => S.user.gerencia ? verPin('') : go('planilla');
+async function verPin(head) {
+  cargando('Cargando pedidos…', MODO === 'celular' ? 'sup' : null);
   try {
     const r = await api('pinPedidos');
-    const filas = r.pedidos.map(p => '<tr><td>' + esc(p.legajo) + '</td><td><b>' + esc(p.nombre) + '</b></td><td>' + (p.tipo === 'cambio_pin' ? 'Cambio de PIN' : 'Cambio de celular') + '</td><td>' + esc(p.at) + '</td><td>' +
-      (p.tipo === 'cambio_pin' ? '<button class="btn sm" data-act="pinAsignar" data-l="' + esc(p.legajo) + '">Asignar PIN nuevo</button>' : '<button class="btn sm" data-act="desvincular" data-l="' + esc(p.legajo) + '">Desvincular celular</button>') + '</td></tr>').join('');
-    shell('<div><h1 class="h-display" style="font-size:40px">PIN Y CELULARES</h1><span class="muted">Solo Gerencia. Cada cambio queda registrado.</span></div>' +
-      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Legajo</th><th>Nombre</th><th>Pedido</th><th>Fecha</th><th></th></tr></thead><tbody>' + (filas || '<tr><td colspan="5" class="muted">No hay pedidos pendientes.</td></tr>') + '</tbody></table></div>' +
-      '<div class="dgrid"><div class="card stack"><b>Asignar un PIN a mano</b><label class="f">Legajo<input class="inp" id="mL" inputmode="numeric"></label><button class="btn sm" data-act="pinAsignar">Asignar PIN nuevo</button></div>' +
+    const cards = r.pedidos.map(p => {
+      const pin = p.tipo === 'cambio_pin';
+      return '<div class="item pend"><div class="row"><div><b>' + esc(p.nombre) + '</b><div class="xs muted">Legajo ' + esc(p.legajo) + ' · ' + esc(p.at) + '</div></div><span class="tag warn">' + (pin ? 'Cambio de PIN' : 'Cambio de celular') + '</span></div>' +
+        '<span class="small muted">' + (pin ? 'Pidió un PIN nuevo. Al asignarlo, avisale el número.' : 'Quiere entrar desde otro celular.' + (p.vinculado ? ' Su celular actual está vinculado desde el ' + esc(p.vinculado) + '.' : '') + ' Al aprobar, se cierra la sesión del celular anterior y puede entrar en el nuevo con su legajo y PIN.') + '</span>' +
+        (pin ? '<button class="btn sm ok" data-act="pinAsignar" data-l="' + esc(p.legajo) + '">Asignar PIN nuevo</button>' : '<button class="btn sm ok" data-act="desvincular" data-l="' + esc(p.legajo) + '">Aprobar cambio de celular</button>') + '</div>';
+    }).join('') || '<div class="card small muted">No hay pedidos pendientes.</div>';
+    supShell(head, '<div><h1 class="h-display ' + (MODO === 'escritorio' ? '" style="font-size:40px' : 't-l') + '">CELULARES Y PIN</h1><span class="small muted">Solo Gerencia. Cada cambio queda registrado.</span></div>' +
+      '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PEDIDOS PENDIENTES (' + r.pedidos.length + ')</span>' +
+      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + cards + '</div>' +
+      '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:8px">SIN PEDIDO</span>' +
+      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px"><div class="card stack"><b>Asignar un PIN a mano</b><label class="f">Legajo<input class="inp" id="mL" inputmode="numeric"></label><button class="btn sm" data-act="pinAsignar">Asignar PIN nuevo</button></div>' +
       '<div class="card stack"><b>Desvincular un celular</b><span class="small muted">Usalo cuando alguien cambia o pierde el celular. Después vuelve a ingresar con su legajo y PIN.</span><label class="f">Legajo<input class="inp" id="mD" inputmode="numeric"></label><button class="btn sm" data-act="desvincular">Desvincular</button></div></div>');
-  } catch (e) { errorBox(e.message, null, 'pin'); }
-};
+  } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'pin'); }
+}
 ACT.pinAsignar = async function (b) {
   const leg = b.dataset.l || ($('#mL') && $('#mL').value.trim());
   if (!leg) return toast('Poné el legajo.');
   const pin = prompt('PIN nuevo de 4 números para el legajo ' + leg + ':');
   if (pin === null) return;
   if (!/^\d{4}$/.test(pin.trim())) return toast('El PIN tiene que tener 4 números.');
-  try { await api('pinAsignar', { legajo: leg, pin: pin.trim() }); toast('PIN asignado. Avisale a la persona.', 5000); go('pin'); } catch (e) { toast(e.message, 5000); }
+  try { await api('pinAsignar', { legajo: leg, pin: pin.trim() }); toast('PIN asignado. Avisale a la persona.', 5000); volverPin(); } catch (e) { toast(e.message, 5000); }
 };
 ACT.desvincular = async function (b) {
   const leg = b.dataset.l || ($('#mD') && $('#mD').value.trim());
   if (!leg) return toast('Poné el legajo.');
-  if (!confirm('¿Desvincular el celular del legajo ' + leg + '? Va a tener que volver a ingresar con su legajo y PIN.')) return;
-  try { const r = await api('desvincular', { legajo: leg }); toast(r.desvinculados ? 'Celular desvinculado.' : 'Ese legajo no tenía celular vinculado.', 5000); go('pin'); } catch (e) { toast(e.message, 5000); }
+  if (!confirm('¿Aprobar el cambio de celular del legajo ' + leg + '? Se cierra la sesión del celular anterior y entra en el nuevo con su legajo y PIN.')) return;
+  try { const r = await api('desvincular', { legajo: leg }); toast(r.desvinculados ? 'Listo: ya puede entrar desde el celular nuevo.' : 'Ese legajo no tenía celular vinculado. Ya puede entrar.', 5000); volverPin(); } catch (e) { toast(e.message, 5000); }
 };
 ACT.salir = () => salir(false);
 
