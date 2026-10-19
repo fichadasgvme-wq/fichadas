@@ -104,6 +104,7 @@ video.photo{aspect-ratio:3/4;background:#000}
 .modal{position:fixed;inset:0;background:rgba(10,20,35,.55);display:flex;align-items:flex-end;justify-content:center;z-index:80;padding:12px}
 .modal .sheet{background:#fff;border-radius:16px;max-width:520px;width:100%;max-height:88vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
 details summary{cursor:pointer;font-weight:600}
+details.item summary{font-weight:400}details.item summary::-webkit-details-marker{display:none}details.item[open]{box-shadow:0 2px 10px rgba(21,35,58,.08)}
 .err{color:var(--red);font-size:14px;min-height:18px}
 @media (min-width:900px){.modal{align-items:center}}
 </style>
@@ -154,6 +155,7 @@ function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + pad(d.g
 function hora() { const d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
 function fechaCorta(f) { const [y, m, d] = String(f).split('-').map(Number); const x = new Date(y, m - 1, d); return DIAS[x.getDay()] + ' ' + pad(d) + '/' + pad(m); }
 function fechaHora() { const d = new Date(); return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' ' + hora(); }
+function norm(x) { return String(x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function num(x) { return (Math.round((Number(x) || 0) * 10) / 10).toLocaleString('es-AR'); }
 function toast(msg, ms) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, ms || 3500); }
 function loadScript(src) { return new Promise((res, rej) => { if (document.querySelector('script[src="' + src + '"]')) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar ' + src)); document.head.appendChild(s); }); }
@@ -209,7 +211,7 @@ function wmUpdate() {
 setInterval(wmUpdate, 60000);
 let ultimaAccion = Date.now();
 ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ultimaAccion = Date.now(); }, { passive: true }));
-const VISTAS_SUP = ['sup', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
+const VISTAS_SUP = ['sup', 'personas', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
 setInterval(() => {
   if (!S.user || Date.now() - ultimaAccion < 5 * 60000) return;
   if (MODO === 'escritorio') { salir(false); toast('La sesión se cerró por 5 minutos sin uso.', 6000); }
@@ -237,7 +239,7 @@ function navCel(on) {
   return '<div style="margin-top:auto;display:grid;gap:8px;padding-top:8px">' + btn + nav + '</div>';
 }
 function deskHeader() {
-  const it = [['planilla', 'Planilla resumen'], ['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']];
+  const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas'], ['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']];
   if (S.user.gerencia) it.push(['pin', 'PIN y celulares']);
   return '<header class="top" style="align-items:center;flex-wrap:wrap"><div class="row" style="gap:14px"><img class="logo" src="' + LOGO + '" alt="GVME"><span class="h-display t-m" style="color:var(--accent)">FICHADAS</span></div>' +
     '<div class="row small"><span>' + esc(S.user.nombre) + ' · ' + esc(S.user.rolTxt) + '</span><button class="btn sm" data-act="salir">Salir</button></div></header>' +
@@ -611,11 +613,12 @@ V.sup = function (p) {
   S.supTab = (p && p.tab) || S.supTab || 'resumen';
   if (S.supTab === 'pendientes' && !S.user.aprueba) S.supTab = 'resumen';
   if (S.supTab === 'obras' && !S.user.aprueba) S.supTab = 'resumen';
-  const tabs = [['resumen', 'Resumen']];
+  const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
   const head = '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === S.supTab ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
   S.supHead = head;
   if (S.supTab === 'resumen') return verResumen(head);
+  if (S.supTab === 'personas') return verPersonas(head, p || {});
   if (S.supTab === 'pendientes') return verPendientes(head);
   return verObras(head);
 };
@@ -628,8 +631,8 @@ async function verResumen(head) {
     const obras = r.porObra.map(o => {
       const pct = o.dotacion ? Math.min(100, Math.round(o.presentes / o.dotacion * 100)) : 0;
       const est = o.semaforo === 'verde' ? 'Completa' : o.semaforo === 'sin_dotacion' ? 'Sin dotación cargada' : 'Faltan ' + (o.dotacion - o.presentes);
-      return '<div class="item ' + o.semaforo + '"><div class="row"><div class="row" style="gap:10px;justify-content:flex-start"><span class="dot" style="background:var(--c)"></span><b>' + esc(o.nombre) + '</b></div><span class="h-display t-m">' + o.presentes + (o.dotacion ? ' / ' + o.dotacion : '') + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><span class="xs c-txt" style="font-weight:600">' + est + '</span></div>';
+      return '<a href="#" class="item ' + o.semaforo + '" style="text-decoration:none;color:inherit" data-go="sup" data-p=\'' + esc(JSON.stringify({ tab: 'personas', obra: o.id })) + '\'><div class="row"><div class="row" style="gap:10px;justify-content:flex-start"><span class="dot" style="background:var(--c)"></span><b>' + esc(o.nombre) + '</b></div><span class="h-display t-m">' + o.presentes + (o.dotacion ? ' / ' + o.dotacion : '') + '</span></div>' +
+        '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><div class="row"><span class="xs c-txt" style="font-weight:600">' + est + '</span><span class="xs" style="color:var(--accent);font-weight:600">Ver personas ›</span></div></a>';
     }).join('') || '<div class="card small muted">Todavía no hay obras cargadas.</div>';
     const aus = r.ausentes.map(a => '<div class="row small"><span>' + esc(a.nombre) + ' <span class="muted">· ' + esc(a.legajo) + '</span></span><span class="muted">' + esc(a.obra) + '</span></div>').join('');
     supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span></div>' +
@@ -637,6 +640,72 @@ async function verResumen(head) {
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PRESENTES POR OBRA · CONTRA DOTACIÓN</span><div class="stack" style="gap:8px">' + obras + '</div>' +
       '<details class="card"><summary>Ausentes hoy (' + r.ausentes.length + ')</summary><div class="stack" style="gap:6px;margin-top:10px">' + (aus || '<span class="small muted">Nadie.</span>') + '</div></details>');
   } catch (e) { errorBox(e.message, 'sup', 'sup'); }
+}
+
+
+/* ---------- Personas por obra (celular y escritorio) ---------- */
+const EST_P = {
+  adentro: ['Trabajando', 'var(--green)', 'var(--green-text)'],
+  salio: ['Salió', '#346CB6', '#24508A'],
+  ausente: ['Ausente', 'var(--red)', 'var(--red)'],
+  sin_fichar: ['Sin fichar', '#9AA5B4', 'var(--muted)']
+};
+async function verPersonas(head, p) {
+  const fecha = p.fecha || S.persFecha || hoyISO();
+  S.persFecha = fecha;
+  if (p.obra !== undefined) S.persObra = p.obra;
+  if (S.persEst === undefined) S.persEst = '';
+  cargando('Cargando personas…', MODO === 'celular' ? 'sup' : null);
+  try {
+    const r = await api('personas', { fecha: fecha });
+    S.pers = r;
+    const opt = '<option value="">Todas las obras</option>' + r.obras.map(o => '<option value="' + esc(o.id) + '"' + (o.id === S.persObra ? ' selected' : '') + '>' + esc(o.nombre) + '</option>').join('') + '<option value="_sin"' + (S.persObra === '_sin' ? ' selected' : '') + '>Sin fichar hoy</option>';
+    const chips = [['', 'Todos'], ['adentro', 'Trabajando'], ['salio', 'Salieron'], ['ausente', 'Ausentes']].map(c => '<a href="#" data-act="persEst" data-e="' + c[0] + '" class="' + (c[0] === S.persEst ? 'on' : '') + '">' + c[1] + '</a>').join('');
+    supShell(head, '<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display ' + (MODO === 'escritorio' ? '" style="font-size:40px' : 't-l') + '">PERSONAS POR OBRA</h1><span class="small muted">' + fechaCorta(fecha) + ' · tocá una persona para ver sus datos</span></div>' +
+      '<input class="inp" type="date" id="psF" value="' + fecha + '" style="height:44px;max-width:180px"></div>' +
+      '<div class="' + (MODO === 'escritorio' ? 'row' : 'stack') + '" style="gap:8px;flex-wrap:wrap"><select class="inp" id="psO" style="height:44px' + (MODO === 'escritorio' ? ';max-width:320px' : '') + '">' + opt + '</select>' +
+      '<input class="inp" id="psB" placeholder="Buscar por nombre o legajo" style="height:44px' + (MODO === 'escritorio' ? ';max-width:320px' : '') + '"></div>' +
+      '<nav class="tabs" id="psE">' + chips + '</nav><div id="psRes"></div><div id="psL" class="stack" style="gap:14px"></div>');
+    $('#psF').onchange = e => go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas', fecha: e.target.value });
+    $('#psO').onchange = e => { S.persObra = e.target.value; listaPersonas(); };
+    $('#psB').oninput = () => listaPersonas();
+    listaPersonas();
+  } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'personas'); }
+}
+ACT.persEst = function (a) {
+  S.persEst = a.dataset.e;
+  document.querySelectorAll('#psE a').forEach(x => x.classList.toggle('on', x === a));
+  listaPersonas();
+};
+function listaPersonas() {
+  const r = S.pers, q = norm($('#psB') ? $('#psB').value : '');
+  const obraDe = x => x.obra_id || '_sin';
+  let ps = r.personas.filter(x => (!S.persEst || x.estado === S.persEst) && (!S.persObra || obraDe(x) === S.persObra || (!x.obra_id && S.persObra !== '_sin' && norm(x.obra_asignada) === norm((r.obras.find(o => o.id === S.persObra) || {}).nombre))) && (!q || norm(x.nombre).includes(q) || String(x.legajo).includes(q)));
+  const cnt = k => ps.filter(x => x.estado === k).length;
+  $('#psRes').innerHTML = '<div class="grid3"><div class="kpi"><span class="xs muted">Trabajando</span><b style="color:var(--green)">' + cnt('adentro') + '</b></div><div class="kpi"><span class="xs muted">Salieron</span><b style="color:#346CB6">' + cnt('salio') + '</b></div><div class="kpi"><span class="xs muted">Ausentes</span><b style="color:var(--red)">' + cnt('ausente') + '</b></div></div>';
+  const grupos = {};
+  ps.forEach(x => { const g = x.obra || (x.estado === 'ausente' ? 'Ausentes · asignados a ' + (x.obra_asignada || '—') : 'Sin fichar hoy'); (grupos[g] = grupos[g] || []).push(x); });
+  const orden = Object.keys(grupos).sort((a, b) => (/^(Ausentes|Sin fichar)/.test(a) ? 1 : 0) - (/^(Ausentes|Sin fichar)/.test(b) ? 1 : 0) || a.localeCompare(b));
+  const ord = { adentro: 0, salio: 1, ausente: 2, sin_fichar: 3 };
+  $('#psL').innerHTML = orden.map(g => {
+    const o = r.obras.find(x => x.nombre === g);
+    const lista = grupos[g].sort((a, b) => ord[a.estado] - ord[b.estado] || a.nombre.localeCompare(b.nombre));
+    return '<div class="stack" style="gap:8px"><div class="row"><span class="xs muted" style="font-weight:600;letter-spacing:1px">' + esc(g.toUpperCase()) + '</span><span class="xs muted">' + lista.length + (o && o.dotacion ? ' / ' + o.dotacion + ' de dotación' : '') + '</span></div>' +
+      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:8px">' + lista.map(tarjetaPersona).join('') + '</div></div>';
+  }).join('') || '<div class="card small muted">No hay personas con ese filtro.</div>';
+}
+function tarjetaPersona(x) {
+  const e = EST_P[x.estado] || EST_P.sin_fichar;
+  const hs = x.horas ? [x.horas.normales && num(x.horas.normales) + ' h normales', x.horas.al50 && num(x.horas.al50) + ' h al 50%', x.horas.al100 && num(x.horas.al100) + ' h al 100%'].filter(Boolean).join(' · ') : '';
+  const fila = (l, v) => v ? '<div class="row small"><span class="muted">' + l + '</span><span style="text-align:right">' + v + '</span></div>' : '';
+  const fs = x.fichadas.map(f => '<div class="row small" style="align-items:flex-start;gap:8px"><span><b>' + esc(f.hora) + '</b> · ' + (f.tipo === 'in' ? 'Entrada' : 'Salida') + ' · ' + esc(f.obra) +
+    (f.causa ? '<br><span class="xs" style="color:var(--amber-text)">' + esc(f.causa) + '</span>' : '') + (f.motivo ? '<br><span class="xs muted">Motivo: ' + esc(f.motivo) + '</span>' : '') + (f.por ? '<br><span class="xs muted">Fichada por ' + esc(f.por) + '</span>' : '') + '</span>' + estadoTag(f.estado) + '</div>').join('');
+  return '<details class="item" style="border-left:4px solid ' + e[1] + '"><summary style="list-style:none"><div class="row" style="gap:10px"><div style="min-width:0"><b>' + esc(x.nombre) + '</b><div class="xs muted">Legajo ' + esc(x.legajo) + (x.categoria ? ' · ' + esc(x.categoria) : '') + '</div></div>' +
+    '<div style="text-align:right;flex:none"><span class="xs" style="font-weight:600;color:' + e[2] + '">' + e[0] + '</span><div class="small">' + (x.entrada ? esc(x.entrada) + (x.salida ? ' – ' + esc(x.salida) : ' –') : '—') + '</div>' + (x.pendientes ? '<span class="tag warn">' + x.pendientes + ' pendiente' + (x.pendientes > 1 ? 's' : '') + '</span>' : '') + '</div></div></summary>' +
+    '<div class="stack" style="gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
+    '<span class="xs muted" style="font-weight:600;letter-spacing:1px">DATOS</span>' + fila('Legajo', esc(x.legajo)) + fila('Categoría', esc(x.categoria)) + fila('Rol', esc(x.rol)) + fila('Grupo', esc(x.grupo) + (x.contratista ? ' · ' + esc(x.contratista) : '')) + fila('Obra asignada', esc(x.obra_asignada)) + fila('Email', esc(x.email)) +
+    '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">HOY</span>' + fila('Obra', esc(x.obra) || '—') + fila('Entrada', esc(x.entrada) || '—') + fila('Salida', esc(x.salida) || (x.estado === 'adentro' ? 'Todavía trabajando' : '—')) + fila('Horas', hs) +
+    (fs ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">FICHADAS</span>' + fs : '') + '</div></details>';
 }
 
 async function verPendientes(head) {
@@ -858,6 +927,7 @@ ACT.eGuardar = async function (b) {
  * ===================================================================== */
 V.pendientes = () => verPendientes('');
 V.obras = () => verObras('');
+V.personas = p => verPersonas('', p || {});
 
 V.planilla = async function (p) {
   const fecha = (p && p.fecha) || S.planFecha || hoyISO();
@@ -868,7 +938,7 @@ V.planilla = async function (p) {
     S.plan = r;
     const kp = (l, v, n, c) => '<div class="kpi"><span class="small muted">' + l + '</span><b style="color:' + c + ';font-size:40px">' + v + '</b><span class="xs muted">' + n + '</span></div>';
     const sem = r.semana.map(s => '<div class="kpi"><b style="font-size:16px;font-family:var(--f-body)">' + fechaCorta(s.fecha) + '</b><span class="small" style="color:var(--green-text)">' + s.presentes + ' presentes</span><span class="small" style="color:var(--red)">' + s.ausentes + ' ausentes</span></div>').join('');
-    const obras = r.porObra.map(o => '<tr class="' + o.semaforo + '"><td><b>' + esc(o.nombre) + '</b></td><td>' + o.dotacion + '</td><td>' + o.presentes + '</td><td>' + (o.dotacion ? o.presentes - o.dotacion : '—') + '</td><td><span class="row" style="justify-content:flex-start;gap:8px"><span class="dot" style="background:var(--c)"></span><span class="c-txt" style="font-weight:600">' + (o.semaforo === 'verde' ? 'Completa' : o.semaforo === 'sin_dotacion' ? 'Sin dotación' : 'Faltan ' + (o.dotacion - o.presentes)) + '</span></span></td></tr>').join('');
+    const obras = r.porObra.map(o => '<tr class="' + o.semaforo + '" style="cursor:pointer" data-go="personas" data-p=\'' + esc(JSON.stringify({ obra: o.id, fecha: fecha })) + '\'><td><b>' + esc(o.nombre) + '</b> <span class="xs" style="color:var(--accent)">ver personas ›</span></td><td>' + o.dotacion + '</td><td>' + o.presentes + '</td><td>' + (o.dotacion ? o.presentes - o.dotacion : '—') + '</td><td><span class="row" style="justify-content:flex-start;gap:8px"><span class="dot" style="background:var(--c)"></span><span class="c-txt" style="font-weight:600">' + (o.semaforo === 'verde' ? 'Completa' : o.semaforo === 'sin_dotacion' ? 'Sin dotación' : 'Faltan ' + (o.dotacion - o.presentes)) + '</span></span></td></tr>').join('');
     const aus = r.ausentes.map(a => '<tr><td>' + esc(a.legajo) + '</td><td><b>' + esc(a.nombre) + '</b></td><td>' + esc(a.categoria) + '</td><td>' + esc(a.grupo) + (a.contratista ? ' · ' + esc(a.contratista) : '') + '</td><td>' + esc(a.obra) + '</td><td class="muted">' + esc(a.ultima || '—') + '</td></tr>').join('');
     shell('<div class="row" style="flex-wrap:wrap"><div><h1 class="h-display" style="font-size:40px">PLANILLA RESUMEN</h1><span class="muted">Presentes por obra contra dotación, y ausentes del día</span></div>' +
       '<div class="row"><label class="f">Día<input class="inp" type="date" id="pF" value="' + fecha + '" style="height:44px"></label><button class="btn sm" data-act="planExcel" style="align-self:flex-end">Descargar Excel</button></div></div>' +
