@@ -240,7 +240,8 @@ function navCel(on) {
   return '<div style="margin-top:auto;display:grid;gap:8px;padding-top:8px">' + btn + nav + '</div>';
 }
 function deskHeader() {
-  const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas'], ['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']];
+  const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas']];
+  if (S.user.aprueba) it.push(['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']);
   if (S.user.gerencia) it.push(['pin', 'PIN y celulares']);
   return '<header class="top" style="align-items:center;flex-wrap:wrap"><div class="row" style="gap:14px"><img class="logo" src="' + LOGO + '" alt="GVME"><span class="h-display t-m" style="color:var(--accent)">FICHADAS</span></div>' +
     '<div class="row small"><span>' + esc(S.user.nombre) + ' · ' + esc(S.user.rolTxt) + '</span><button class="btn sm" data-act="salir">Salir</button></div></header>' +
@@ -1014,8 +1015,8 @@ ACT.eGuardar = async function (b) {
 /* =====================================================================
  *  Escritorio
  * ===================================================================== */
-V.pendientes = () => verPendientes('');
-V.obras = () => verObras('');
+V.pendientes = () => S.user.aprueba ? verPendientes('') : go('planilla');
+V.obras = () => S.user.aprueba ? verObras('') : go('planilla');
 V.personas = p => verPersonas('', p || {});
 
 V.planilla = async function (p) {
@@ -1051,6 +1052,7 @@ ACT.planExcel = async function () {
 };
 
 V.importar = function () {
+  if (!S.user.aprueba) return go('planilla');
   S.imp = null;
   shell('<div><h1 class="h-display" style="font-size:40px">IMPORTAR PERSONAL</h1><span class="muted">Cargá legajos y PIN desde un Excel.</span></div>' +
     '<div class="dgrid"><div class="card stack"><span class="xs" style="font-weight:600;color:var(--accent);letter-spacing:1px">PASO 1</span><b>Descargá la plantilla</b><span class="small muted">Legajo · Apellido y nombre · Categoría · Grupo (Propio o Subc) · Contratista · Obra asignada · Rol · Email · PIN · Activo</span><button class="btn sm" data-act="impPlantilla">Descargar plantilla .xlsx</button></div>' +
