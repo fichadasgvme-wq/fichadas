@@ -222,6 +222,7 @@ setInterval(() => {
 const V = {};
 function go(view, params) {
   if (S.stream) camStop();
+  if (typeof autoCancelar === 'function') autoCancelar();
   S.view = view; S.params = params || {};
   window.scrollTo(0, 0);
   (V[view] || V.fichar)(S.params);
@@ -337,7 +338,7 @@ V.fichar = async function () {
   try {
     S.pos = await gps(false);
     S.est = await api('estado', S.pos);
-    if (S.view === 'fichar') drawFichar();
+    if (S.view === 'fichar') { drawFichar(); autoFichar(); }
   } catch (e) { errorBox(e.message, 'fichar', 'fichar'); }
 };
 
@@ -432,6 +433,50 @@ ACT.fichar = async function (btn) {
     btn.disabled = false; btn.innerHTML = txt;
   }
 };
+
+/* ---------- Fichada automática al abrir la app ----------
+ * Una vez por apertura: si al abrir la app está dentro de la zona de una sola obra, ficha la entrada sola;
+ * si tiene la entrada abierta, está a menos de 300 m y falta poco para el fin de la jornada (o ya pasó), ficha la salida.
+ * Muestra una cuenta regresiva con «Cancelar». No ficha si hubo una fichada en los últimos 15 minutos. */
+let autoTimer = null;
+function autoCancelar() { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } const c = $('#autoBox'); if (c) c.remove(); }
+function autoElegible() {
+  const e = S.est;
+  if (!e || e.auto === false || S.autoUsado || MODO !== 'celular') return false;
+  const ult = e.hoy[e.hoy.length - 1];
+  if (ult && (Date.now() - new Date(String(ult.at).replace(' ', 'T')).getTime()) < 15 * 60000) return false;
+  if (e.proximo === 'in') {
+    if (e.precisionMala || $('#fMotivo') || !$('#fObra')) return false;
+    return e.obras.filter(o => o.zona === 'ok').length === 1;
+  }
+  const ab = e.abierta;
+  if (!ab || ab.zona !== 'ok' || !ab.fin || !$('[data-act=fichar]') || $('#fMotivo') || $('[data-act=cambiar]')) return false;
+  const p = String(ab.fin).split(':'), fin = (+p[0]) * 60 + (+p[1]), d = new Date(), ahora = d.getHours() * 60 + d.getMinutes();
+  return ahora >= fin - 15;
+}
+function autoFichar() {
+  if (!autoElegible()) return;
+  S.autoUsado = true;
+  const btn = $('[data-act=fichar]');
+  const tipo = S.est.proximo === 'in' ? 'ENTRADA' : 'SALIDA';
+  let n = 5;
+  const box = document.createElement('div');
+  box.id = 'autoBox'; box.className = 'card stack';
+  box.style.cssText = 'gap:10px;border:2px solid var(--accent);background:var(--accent-soft, #D9E8F8)';
+  box.innerHTML = '<b style="font-size:18px">Fichando tu ' + tipo + ' en <span id="autoN">' + n + '</span>…</b><span class="small">Lo hacemos solos porque estás en la obra. Si no querés fichar ahora, tocá Cancelar.</span><button class="btn block" data-act="autoCancelar">Cancelar</button>';
+  btn.parentNode.parentNode.insertBefore(box, btn.parentNode);
+  autoTimer = setInterval(() => {
+    if (S.view !== 'fichar' || !document.body.contains(box)) return autoCancelar();
+    n--; const el = $('#autoN'); if (el) el.textContent = n;
+    if (n <= 0) { autoCancelar(); if (!btn.disabled) ACT.fichar(btn); }
+  }, 1000);
+}
+ACT.autoCancelar = () => { autoCancelar(); toast('Listo, no se fichó. Podés fichar cuando quieras con el botón.'); };
+let ocultoDesde = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { ocultoDesde = Date.now(); autoCancelar(); return; }
+  if (ocultoDesde && Date.now() - ocultoDesde > 2 * 60000 && S.user && MODO === 'celular') { S.autoUsado = false; if (S.view === 'fichar' || S.view === 'listo') go('fichar'); }
+});
 
 ACT.cambiar = async function (btn) {
   const obra = $('#fCambio') ? $('#fCambio').value : '';
