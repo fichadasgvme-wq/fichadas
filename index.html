@@ -741,7 +741,21 @@ function listaPersonas() {
     return '<div class="stack" style="gap:8px"><div class="row"><span class="xs muted" style="font-weight:600;letter-spacing:1px">' + esc(g.toUpperCase()) + '</span><span class="xs muted">' + lista.length + (o && o.dotacion ? ' / ' + o.dotacion + ' de dotación' : '') + '</span></div>' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:8px">' + lista.map(tarjetaPersona).join('') + '</div></div>';
   }).join('') || '<div class="card small muted">No hay personas con ese filtro.</div>';
+  const bj = (r.bajas || []).filter(x => !q || norm(x.nombre).includes(q) || String(x.legajo).includes(q));
+  if (bj.length && !S.persEst && !S.persObra) $('#psL').insertAdjacentHTML('beforeend', '<details class="card"><summary class="small" style="cursor:pointer"><b>Dados de baja (' + bj.length + ')</b> · sin acceso a la app; su historial se conserva</summary><div class="stack" style="gap:6px;margin-top:10px">' +
+    bj.map(x => '<div class="row small"><span>' + esc(x.nombre) + '<br><span class="xs muted">Legajo ' + esc(x.legajo) + (x.baja ? ' · baja ' + esc(x.baja) : '') + '</span></span>' + (r.puedeBaja ? '<button class="btn sm" data-act="persAlta" data-l="' + esc(x.legajo) + '" data-n="' + esc(x.nombre) + '">Reactivar</button>' : '') + '</div>').join('') + '</div></details>');
 }
+ACT.persBaja = async function (b) {
+  if (!confirm('¿Dar de baja a ' + b.dataset.n + '?\n\nSe le corta el acceso a la app en el momento (se cierran sus sesiones). Su historial de fichadas y horas no se borra.')) return;
+  b.disabled = true;
+  try { const r = await api('personaBaja', { legajo: b.dataset.l }); toast(b.dataset.n + ' quedó dado de baja' + (r.sesionesCerradas ? ' · ' + r.sesionesCerradas + ' sesión cerrada' : '') + '.', 5000); go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' }); }
+  catch (e) { toast(e.message, 5000); b.disabled = false; }
+};
+ACT.persAlta = async function (b) {
+  if (!confirm('¿Reactivar a ' + b.dataset.n + '? Va a poder volver a ingresar con su legajo y PIN.')) return;
+  try { await api('personaBaja', { legajo: b.dataset.l, reactivar: true }); toast(b.dataset.n + ' reactivado.'); go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' }); }
+  catch (e) { toast(e.message, 5000); }
+};
 function tarjetaPersona(x) {
   const e = EST_P[x.estado] || EST_P.sin_fichar;
   const hs = x.horas ? [x.horas.normales && num(x.horas.normales) + ' h normales', x.horas.al50 && num(x.horas.al50) + ' h al 50%', x.horas.al100 && num(x.horas.al100) + ' h al 100%'].filter(Boolean).join(' · ') : '';
@@ -752,6 +766,7 @@ function tarjetaPersona(x) {
     '<div style="text-align:right;flex:none"><span class="xs" style="font-weight:600;color:' + e[2] + '">' + e[0] + '</span><div class="small">' + (x.entrada ? esc(x.entrada) + (x.salida ? ' – ' + esc(x.salida) : ' –') : '—') + '</div>' + (x.pendientes ? '<span class="tag warn">' + x.pendientes + ' pendiente' + (x.pendientes > 1 ? 's' : '') + '</span>' : '') + '</div></div></summary>' +
     '<div class="stack" style="gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
     '<span class="xs muted" style="font-weight:600;letter-spacing:1px">DATOS</span>' + fila('Legajo', esc(x.legajo)) + fila('Categoría', esc(x.categoria)) + fila('Rol', esc(x.rol)) + fila('Grupo', esc(x.grupo) + (x.contratista ? ' · ' + esc(x.contratista) : '')) + fila('Obra asignada', esc(x.obra_asignada)) + fila('Email', esc(x.email)) +
+    (S.pers && S.pers.puedeBaja ? '<button class="btn sm" style="align-self:flex-start;margin-top:4px" data-act="persBaja" data-l="' + esc(x.legajo) + '" data-n="' + esc(x.nombre) + '">Dar de baja · cortar el acceso</button>' : '') +
     '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">HOY</span>' + fila('Obra', esc(x.obra) || '—') + fila('Entrada', esc(x.entrada) || '—') + fila('Salida', esc(x.salida) || (x.estado === 'adentro' ? 'Todavía trabajando' : '—')) + fila('Horas', hs) +
     (fs ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">FICHADAS</span>' + fs : '') + '</div></details>';
 }
@@ -793,15 +808,31 @@ async function verPendientes(head) {
       return '<div class="item pend"><div class="row"><div><b>' + esc(it.nombre) + '</b><div class="xs muted">' + sub + '</div></div><span class="h-display t-m">' + (it.kind === 'fichada' ? esc(it.hora) : '+' + num(it.horas) + ' h') + '</span></div>' +
         '<span class="small" style="color:var(--amber-text)">' + esc(it.obra) + ' · ' + esc(it.causaTxt) + '</span>' + (it.motivo ? '<span class="small muted">Motivo: ' + esc(it.motivo) + '</span>' : '') + mapaHtml(it, i) + acc + '</div>';
     };
-    const items = r.items.map(card).join('') || '<div class="card small muted">No hay nada para autorizar.</div>';
+    const obrasP = [...new Map(r.items.map(it => [it.obra_id || it.obra, it.obra || 'Sin obra'])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    if (S.pendObra && !obrasP.some(o => o[0] === S.pendObra)) S.pendObra = '';
+    const vis = r.items.map((it, i) => [it, i]).filter(([it]) => !S.pendObra || (it.obra_id || it.obra) === S.pendObra);
+    const lote = vis.filter(([it]) => !it.propia && it.kind !== 'revision' && !(it.kind === 'fichada' && it.foto)).map(([it]) => ({ kind: it.kind, id: it.id }));
+    S.pendLote = lote;
+    const grupos = {}; vis.forEach(([it, i]) => { (grupos[it.obra || 'Sin obra'] = grupos[it.obra || 'Sin obra'] || []).push(card(it, i)); });
+    const filtro = obrasP.length ? '<div class="' + (MODO === 'escritorio' ? 'row' : 'stack') + '" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><select class="inp" id="pdO" style="height:44px' + (MODO === 'escritorio' ? ';max-width:360px' : '') + '"><option value="">Todas las obras (' + r.items.length + ')</option>' + obrasP.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === S.pendObra ? ' selected' : '') + '>' + esc(o[1]) + ' (' + r.items.filter(it => (it.obra_id || it.obra) === o[0]).length + ')</option>').join('') + '</select>' +
+      (S.pendObra && lote.length ? '<button class="btn sm ok" data-act="decidirLote" data-d="aprobar">✔ Aprobar todo lo de esta obra (' + lote.length + ')</button><button class="btn sm" data-act="decidirLote" data-d="rechazar">Rechazar todo (' + lote.length + ')</button>' : '') + '</div>' +
+      (S.pendObra && vis.length > lote.length ? '<span class="xs muted">Los que tienen foto de compañero, las salidas a revisar y los tuyos se resuelven uno por uno.</span>' : '') : '';
+    const items = Object.keys(grupos).sort().map(g => '<span class="xs muted" style="font-weight:600;letter-spacing:1px">' + esc(g.toUpperCase()) + ' · ' + grupos[g].length + '</span><div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + grupos[g].join('') + '</div>').join('') || '<div class="card small muted">No hay nada para autorizar.</div>';
     const res = r.resueltas.map(it => '<div class="row small card" style="padding:10px 12px"><span>' + esc(it.nombre) + ' · ' + esc(it.kind === 'fichada' ? it.hora : '+' + it.horas + ' h') + '<br><span class="xs muted">' + esc(it.decidido_por) + '</span></span>' + estadoTag(it.estado) + '</div>').join('');
-    setTimeout(() => r.items.forEach((it, i) => dibujarMapa(it, 'mapa' + i)), 0);
+    setTimeout(() => { vis.forEach(([it, i]) => dibujarMapa(it, 'mapa' + i)); const so = $('#pdO'); if (so) so.onchange = e => { S.pendObra = e.target.value; volverPendientes(); }; }, 0);
     supShell(head, '<div><h1 class="h-display t-l">POR AUTORIZAR (' + r.items.length + ')</h1><span class="small muted">Fuera de zona, compañeros, salidas lejos, ingreso anticipado y extras</span></div>' +
-      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + items + '</div>' +
+      filtro + '<div class="stack" style="gap:10px">' + items + '</div>' +
       (res ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px">RESUELTAS HOY</span><div class="stack" style="gap:6px">' + res + '</div>' : '') +
       '<p class="xs muted" style="margin:0">Si no se autoriza, solo se computa la jornada normal de la obra. Cada decisión queda registrada con tu usuario, fecha y hora. La sesión se cierra sola a los 5 minutos sin uso.</p>');
   } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'pendientes'); }
 }
+ACT.decidirLote = async function (b) {
+  const ok = b.dataset.d === 'aprobar', L = S.pendLote || [], obra = ($('#pdO') && $('#pdO').selectedOptions[0] ? $('#pdO').selectedOptions[0].textContent.replace(/ \(\d+\)$/, '') : '');
+  if (!L.length || !confirm((ok ? '¿Aprobar' : '¿Rechazar') + ' los ' + L.length + ' pedidos de ' + obra + '?')) return;
+  b.disabled = true;
+  try { const r = await api('decidirLote', { items: L, decision: b.dataset.d, obra: obra }); toast((ok ? 'Aprobados: ' : 'Rechazados: ') + r.resueltos + (r.salteados ? ' · ' + r.salteados + ' ya estaban resueltos' : '') + '.', 5000); volverPendientes(); }
+  catch (e) { toast(e.message, 5000); b.disabled = false; }
+};
 ACT.decidir = async function (b) {
   const it = S.pendItems[Number(b.dataset.i)], ok = b.dataset.d === 'aprobar';
   if (!confirm((ok ? '¿Aprobar' : '¿Rechazar') + ' lo de ' + it.nombre + '?')) return;
@@ -884,7 +915,7 @@ async function verObras(head) {
     const r = await api('obras');
     S.obras = r;
     const lista = r.obras.map((o, i) => '<a href="#" class="item" data-go="obra" data-p=\'{"i":' + i + '}\' style="text-decoration:none;color:inherit"><div class="row"><b>' + esc(o.nombre) + '</b><span class="xs muted">' + (o.activa ? '' : 'Inactiva') + '</span></div>' +
-      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + o.dotacion + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
+      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + o.dotacion + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + (o.horario.turno_noche ? ' · turno noche ' + esc(o.horario.tn_ini) + '–' + esc(o.horario.tn_fin) : '') + (o.horario.sab50 ? ' · sáb al 50 %' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
     supShell(head, '<div class="row"><h1 class="h-display t-l">OBRAS</h1>' + (r.puede.crear ? '<button class="btn sm" data-act="obraNueva">+ Nueva obra</button>' : '') + '</div>' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:8px">' + lista + '</div>');
   } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'obras'); }
@@ -932,10 +963,14 @@ V.obra = function (p) {
     '<span class="xs muted">Semáforo: verde con la dotación completa, amarillo del 80 al 99 %, rojo por debajo del 80 %.</span><button class="btn sm" data-act="guardarDot">Guardar dotación</button></div>' +
     (pu.horario ? '<div class="card stack" style="gap:8px"><b class="small">Jornada de la obra</b>' +
       '<select class="inp" id="hModo" style="height:46px"><option value=""' + (h.jornada === '44' ? '' : ' selected') + '>Lunes a viernes + sábado</option><option value="44"' + (h.jornada === '44' ? ' selected' : '') + '>44 h · lun a jue 9 h, vie 8 h, sin sábado</option></select>' +
-      '<b class="small" id="hLvTit">' + (h.jornada === '44' ? 'Lunes a jueves' : 'Lunes a viernes') + '</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
+      '<b class="small" id="hLvTit">' + (h.turno_noche ? 'Turno día · ' : '') + (h.jornada === '44' ? 'Lunes a jueves' : 'Lunes a viernes') + '</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
       '<span class="xs muted">Mañana (inicio y fin) y tarde (inicio y fin). El almuerzo, entre la mañana y la tarde, se descuenta solo.</span>' +
       '<div id="hVie" class="stack" style="gap:8px;' + (h.jornada === '44' ? '' : 'display:none') + '"><b class="small">Viernes · mismo inicio, termina a las</b>' + t('hVf', h.vie_t_fin) + '<span class="xs muted">El sábado no se trabaja: lo que se haga hasta las 13 es extra al 50 % y desde las 13 al 100 %, solo si se autoriza.</span></div>' +
       '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div></div>' +
+      '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label>' +
+      '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hTN" style="width:22px;height:22px"' + (h.turno_noche ? ' checked' : '') + '><span><b>Turno noche</b> · un segundo grupo con otro horario</span></label>' +
+      '<div id="hNoche" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="small">Turno noche · empieza y termina (al día siguiente)</b><div class="grid2">' + t('hNi', h.tn_ini || '21:00') + t('hNf', h.tn_fin || '07:00') + '</div>' +
+      '<span class="xs muted">Se asigna solo por la hora de entrada: desde las 19:00 (y hasta las 04:59) va al turno noche; desde las 05:00, al turno día. La salida a la mañana siguiente cierra la misma jornada. Si el turno empieza un domingo o feriado, va al 100 %.</span></div>' +
       '<div class="row small"><span class="muted">Total semanal</span><b id="hSem">' + num(h.semanal) + ' h</b></div>' +
       '<span class="xs muted">Antes del inicio es ingreso anticipado y después del fin es extra: suman solo si se autorizan.</span><button class="btn sm" data-act="guardarHorario">Guardar horario</button></div>' : '') +
     '<label class="f">Mails para el aviso de salidas olvidadas (separados por coma)<input class="inp" id="oMails" value="' + esc(o.emails_avisos || '') + '"></label><button class="btn sm" data-act="guardarMails">Guardar mails</button>' +
@@ -956,7 +991,7 @@ async function guardarObra(datos, msg) {
 ACT.guardarDot = () => guardarObra({ dotacion: Number($('#oDot').textContent) }, 'Dotación guardada.');
 ACT.guardarMails = () => guardarObra({ emails_avisos: $('#oMails').value }, 'Mails guardados.');
 ACT.guardarCoords = () => { const v = $('#oCoords').value.trim(); if (!v) return toast('Pegá las coordenadas o el link.'); guardarObra({ ubicacion: { modo: 'manual', texto: v } }, 'Ubicación guardada.'); };
-ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value } }, 'Horario guardado.');
+ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value } }, 'Horario guardado.');
 function hMin(v) { const p = String(v || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
 function horarioSemanal() {
   const m = hMin($('#hMf').value) - hMin($('#hMi').value), t = hMin($('#hTf').value) - hMin($('#hTi').value);
@@ -973,6 +1008,7 @@ function horarioEventos() {
     horarioSemanal();
   };
   ['hMi', 'hMf', 'hTi', 'hTf', 'hVf', 'hSi', 'hSf'].forEach(id => { const x = $('#' + id); if (x) x.oninput = horarioSemanal; });
+  const tn = $('#hTN'); if (tn) tn.onchange = () => { $('#hNoche').style.display = tn.checked ? '' : 'none'; $('#hLvTit').textContent = (tn.checked ? 'Turno día · ' : '') + (md.value === '44' ? 'Lunes a jueves' : 'Lunes a viernes'); };
 }
 ACT.fijarGps = async function (b) {
   if (!confirm('¿Estás parado en el ingreso de ' + S.obraSel.nombre + '? Se va a guardar tu ubicación actual como la de la obra.')) return;
@@ -1059,7 +1095,7 @@ V.importar = function () {
   if (!S.user.aprueba) return go('planilla');
   S.imp = null;
   shell('<div><h1 class="h-display" style="font-size:40px">IMPORTAR PERSONAL</h1><span class="muted">Cargá legajos y PIN desde un Excel.</span></div>' +
-    '<div class="dgrid"><div class="card stack"><span class="xs" style="font-weight:600;color:var(--accent);letter-spacing:1px">PASO 1</span><b>Descargá la plantilla</b><span class="small muted">Legajo · Apellido y nombre · Categoría · Grupo (Propio o Subc) · Contratista · Obra asignada · Rol · Email · PIN · Activo</span><button class="btn sm" data-act="impPlantilla">Descargar plantilla .xlsx</button></div>' +
+    '<div class="dgrid"><div class="card stack"><span class="xs" style="font-weight:600;color:var(--accent);letter-spacing:1px">PASO 1</span><b>Descargá la plantilla</b><span class="small muted">Legajo · Apellido y nombre · Categoría · Grupo (Propio o Subc) · Contratista · Obra asignada · Rol · Email · PIN · Activo</span><button class="btn sm" data-act="impBajar">⬇ Bajar el personal actual</button><span class="xs muted">Bajalo, actualizalo en Excel y volvé a subirlo acá. El PIN no se baja: dejalo vacío y se mantiene el que tienen.</span><button class="btn sm" data-act="impPlantilla">Descargar plantilla .xlsx</button></div>' +
     '<div class="card stack"><span class="xs" style="font-weight:600;color:var(--accent);letter-spacing:1px">PASO 2</span><b>Subí el Excel</b><span class="small muted">El PIN son los últimos 4 números del DNI. No subas el DNI completo: solo esos 4 números, que se guardan cifrados.</span><label class="btn sm" style="position:relative;overflow:hidden">Elegir archivo .xlsx<input type="file" id="impF" accept=".xlsx,.xls,.csv" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>' +
     '<div class="card stack"><span class="xs" style="font-weight:600;color:var(--accent);letter-spacing:1px">PASO 3</span><b>Revisá y confirmá</b><span class="small muted">Los legajos nuevos se agregan, los existentes se actualizan y las filas con errores no se importan. ' + (S.user.gerencia ? '' : 'Solo Gerencia puede cambiar roles: la columna Rol se ignora.') + '</span><span class="small" id="impNombre"></span></div></div>' +
     '<div id="impRes"></div>');
@@ -1074,8 +1110,19 @@ ACT.impPlantilla = async function () {
     XLSX.writeFile(wb, 'plantilla_personal_gvme.xlsx');
   } catch (e) { toast(e.message); }
 };
+ACT.impBajar = async function (b) {
+  b.disabled = true;
+  try {
+    const r = await api('personalExport'); await loadScript(XLSX_URL);
+    const ws = XLSX.utils.aoa_to_sheet([['Legajo', 'Apellido y nombre', 'Categoría', 'Grupo', 'Contratista', 'Obra asignada', 'Rol', 'Email', 'PIN', 'Activo', 'Sector', 'Alta', 'Baja']].concat(r.filas.map(p => [p.legajo, p.nombre, p.categoria, p.grupo, p.contratista, p.obra_asignada, p.rol, p.email, '', p.activo, p.sector, p.alta, p.baja])));
+    ws['!cols'] = [{ wch: 9 }, { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 26 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 11 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Personal');
+    XLSX.writeFile(wb, 'personal_gvme_' + hoyISO() + '.xlsx'); toast(r.filas.length + ' personas bajadas.');
+  } catch (e) { toast(e.message, 5000); }
+  b.disabled = false;
+};
 function clave(h) { return String(h || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' '); }
-const COLS = { 'legajo': 'legajo', 'apellido y nombre': 'nombre', 'nombre': 'nombre', 'nombre y apellido': 'nombre', 'categoria': 'categoria', 'grupo': 'grupo', 'contratista': 'contratista', 'obra asignada': 'obra_asignada', 'obra': 'obra_asignada', 'rol': 'rol', 'email': 'email', 'mail': 'email', 'correo': 'email', 'pin': 'pin', 'pin (ultimos 4 dni)': 'pin', 'activo': 'activo' };
+const COLS = { 'legajo': 'legajo', 'apellido y nombre': 'nombre', 'nombre': 'nombre', 'nombre y apellido': 'nombre', 'categoria': 'categoria', 'grupo': 'grupo', 'contratista': 'contratista', 'obra asignada': 'obra_asignada', 'obra': 'obra_asignada', 'rol': 'rol', 'email': 'email', 'mail': 'email', 'correo': 'email', 'pin': 'pin', 'pin (ultimos 4 dni)': 'pin', 'activo': 'activo', 'sector': 'sector' };
 async function leerExcel(ev) {
   const f = ev.target.files[0]; if (!f) return;
   $('#impNombre').textContent = f.name;
