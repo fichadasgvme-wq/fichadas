@@ -360,13 +360,17 @@ function drawFichar() {
     main = '<div class="card ok row" style="justify-content:flex-start;gap:14px"><span style="color:var(--green)">' + ICO.pin + '</span><div><b>Estás en ' + esc(sel.nombre) + '</b><div class="small" style="color:var(--green-text)">A ' + sel.dist + ' m de la obra · GPS ±' + e.acc + ' m</div></div></div>' +
       (enZona.length > 1 ? '<label class="f">Obra<select class="inp" id="fObra">' + enZona.map(o => '<option value="' + esc(o.id) + '"' + (o.id === sel.id ? ' selected' : '') + '>' + esc(o.nombre) + ' · ' + o.dist + ' m</option>').join('') + '</select></label>' : '<input type="hidden" id="fObra" value="' + esc(sel.id) + '">') +
       '<div class="grow" style="display:flex;align-items:center;justify-content:center"><button class="big' + (prox === 'out' ? ' out' : '') + '" data-act="fichar">' + ICO[prox] + '<b>' + lbl + '</b><small>Tocá para fichar</small></button></div>';
-  } else if (fuera.length || e.sinGeo.length) {
+  } else if (fuera.length || e.sinGeo.length || (e.lejos || []).length) {
     let aviso;
     if (e.precisionMala) aviso = 'Tu GPS tiene poca precisión (±' + e.acc + ' m). Podés fichar igual: queda pendiente de aprobación.';
     else if (fuera.length) aviso = 'Estás a <b>' + fuera[0].dist + ' m</b> de <b>' + esc(fuera[0].nombre) + '</b>. Para fichar normal tenés que estar a menos de ' + (fuera[0].radio || e.zonaFichar) + ' m.';
+    else if (e.cercana) aviso = 'No estás cerca de ninguna obra: la más cercana es <b>' + esc(e.cercana.nombre) + '</b>, a <b>' + kmTxt(e.cercana.dist) + '</b>. Elegí la obra: la fichada queda pendiente de aprobación.';
     else aviso = 'Las obras todavía no tienen la ubicación cargada. Elegí la tuya: la fichada queda pendiente de aprobación.';
-    const opts = fuera.map(o => '<option value="' + esc(o.id) + '"' + (o.id === e.ultimaObra ? ' selected' : '') + '>' + esc(o.nombre) + ' · ' + o.dist + ' m</option>').join('') +
-      e.sinGeo.map(o => '<option value="' + esc(o.id) + '"' + (o.id === e.ultimaObra ? ' selected' : '') + '>' + esc(o.nombre) + ' · sin ubicación cargada</option>').join('');
+    const op = (o, txt) => '<option value="' + esc(o.id) + '"' + (o.id === e.ultimaObra ? ' selected' : '') + '>' + esc(o.nombre) + ' · ' + txt + '</option>';
+    const grupo = (lbl, L, f) => L.length ? '<optgroup label="' + lbl + '">' + L.map(o => op(o, f(o))).join('') + '</optgroup>' : '';
+    const opts = grupo('Cerca de tu ubicación', fuera, o => o.dist + ' m') +
+      grupo('Con ubicación cargada', e.lejos || [], o => o.dist === null ? 'sin GPS' : 'a ' + kmTxt(o.dist)) +
+      grupo('Sin ubicación cargada', e.sinGeo, () => 'sin ubicación');
     main = '<div class="card warn stack" style="gap:8px"><div class="row" style="justify-content:flex-start;gap:10px;color:#B57F00">' + ICO.warn + '<b style="color:var(--fg)">Estás fuera de la zona de fichada</b></div><span class="small">' + aviso + '</span></div>' +
       '<span class="small muted">Si tenés que fichar igual, contá por qué. Queda <b>pendiente</b> hasta que la apruebe tu supervisor, jefe de obra, RRHH o Gerencia.</span>' +
       '<label class="f">Obra<select class="inp" id="fObra">' + opts + '</select></label>' +
