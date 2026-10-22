@@ -204,7 +204,7 @@ function gpsMejor(objetivo, esperaMs, onProgreso) {
 function wmUpdate() {
   const wm = $('#wm');
   if (!S.user) { wm.innerHTML = ''; return; }
-  const t = esc(S.user.nombre + ' · Legajo ' + S.user.legajo + ' · ' + fechaHora());
+  const t = esc(S.user.nombre);   // solo nombre y apellido
   const linea = Array(6).fill('<span>' + t + '</span>').join('&nbsp;&nbsp;&nbsp;&nbsp;');
   wm.innerHTML = Array(40).fill(linea).join('<br>');
 }
@@ -1006,7 +1006,8 @@ V.obra = function (p) {
       '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div></div>' +
       '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label>' +
       '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hTN" style="width:22px;height:22px"' + (h.turno_noche ? ' checked' : '') + '><span><b>Turno noche</b> · un segundo grupo con otro horario</span></label>' +
-      '<div id="hNoche" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="small">Turno noche · empieza y termina (al día siguiente)</b><div class="grid2">' + t('hNi', h.tn_ini || '21:00') + t('hNf', h.tn_fin || '07:00') + '</div>' +
+      '<div id="hNoche" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="small">Turno noche</b><div class="grid2">' + t('hNi', h.tn_ini || '21:00') + t('hNci', h.tn_c_ini || '01:00') + t('hNcf', h.tn_c_fin || '02:00') + t('hNf', h.tn_fin || '07:00') + '</div>' +
+      '<span class="xs muted">Primer tramo (inicio y corte para cenar) y segundo tramo (vuelta de la cena y fin, al día siguiente). La cena se descuenta sola.</span>' +
       '<span class="xs muted">Se asigna solo por la hora de entrada: desde las 19:00 (y hasta las 04:59) va al turno noche; desde las 05:00, al turno día. La salida a la mañana siguiente cierra la misma jornada. Si el turno empieza un domingo o feriado, va al 100 %.</span></div>' +
       '<div class="row small"><span class="muted">Total semanal</span><b id="hSem">' + num(h.semanal) + ' h</b></div>' +
       '<span class="xs muted">Antes del inicio es ingreso anticipado y después del fin es extra: suman solo si se autorizan.</span><button class="btn sm" data-act="guardarHorario">Guardar horario</button></div>' : '') +
@@ -1029,7 +1030,7 @@ async function guardarObra(datos, msg) {
 ACT.guardarDot = () => guardarObra(Object.assign({ dotacion: Number($('#oDot').textContent) }, $('#oDotN') && $('#oDotNBox').style.display !== 'none' ? { dotacion_noche: Number($('#oDotN').textContent) } : {}), 'Dotación guardada.');
 ACT.guardarMails = () => guardarObra({ emails_avisos: $('#oMails').value }, 'Mails guardados.');
 ACT.guardarCoords = () => { const v = $('#oCoords').value.trim(); if (!v) return toast('Pegá las coordenadas o el link.'); guardarObra({ ubicacion: { modo: 'manual', texto: v } }, 'Ubicación guardada.'); };
-ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value } }, 'Horario guardado.');
+ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value, tn_c_ini: $('#hNci').value, tn_c_fin: $('#hNcf').value } }, 'Horario guardado.');
 function hMin(v) { const p = String(v || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
 function horarioSemanal() {
   const m = hMin($('#hMf').value) - hMin($('#hMi').value), t = hMin($('#hTf').value) - hMin($('#hTi').value);
