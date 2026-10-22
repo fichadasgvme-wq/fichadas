@@ -942,12 +942,20 @@ async function verObras(head) {
   try {
     const r = await api('obras');
     S.obras = r;
-    const lista = r.obras.map((o, i) => '<a href="#" class="item" data-go="obra" data-p=\'{"i":' + i + '}\' style="text-decoration:none;color:inherit"><div class="row"><b>' + esc(o.nombre) + '</b><span class="xs muted">' + (o.activa ? '' : 'Inactiva') + '</span></div>' +
-      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + o.dotacion + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + (o.horario.turno_noche ? ' · turno noche ' + esc(o.horario.tn_ini) + '–' + esc(o.horario.tn_fin) : '') + (o.horario.sab50 ? ' · sáb al 50 %' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
+    const lista = r.obras.map((o, i) => '<a href="#" class="item obraIt" data-n="' + esc(normBusq(o.nombre + ' ' + o.id)) + '" data-go="obra" data-p=\'{"i":' + i + '}\' style="text-decoration:none;color:inherit"><div class="row"><b>' + esc(o.nombre) + '</b><span class="xs muted">' + (o.activa ? '' : 'Inactiva') + '</span></div>' +
+      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + (o.horario.turno_noche ? 'día ' + o.dotacion + ' · noche ' + (o.dotacion_noche || 0) : o.dotacion) + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + (o.horario.turno_noche ? ' · turno noche ' + esc(o.horario.tn_ini) + '–' + esc(o.horario.tn_fin) : '') + (o.horario.sab50 ? ' · sáb al 50 %' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
     supShell(head, '<div class="row"><h1 class="h-display t-l">OBRAS</h1>' + (r.puede.crear ? '<button class="btn sm" data-act="obraNueva">+ Nueva obra</button>' : '') + '</div>' +
-      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:8px">' + lista + '</div>');
+      '<input class="inp" id="obBusq" type="search" placeholder="🔍 Buscar obra…" autocomplete="off" value="' + esc(S.obraBusq || '') + '" style="height:46px' + (MODO === 'escritorio' ? ';max-width:420px' : '') + '">' +
+      '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" id="obLista" style="gap:8px">' + lista + '</div><div class="card small muted" id="obNada" style="display:none">Ninguna obra coincide con la búsqueda.</div>');
+    const bq = $('#obBusq'), filtra = () => {
+      S.obraBusq = bq.value; const q = normBusq(bq.value).split(' ').filter(Boolean); let n = 0;
+      document.querySelectorAll('.obraIt').forEach(a => { const v = q.every(w => a.dataset.n.includes(w)); a.style.display = v ? '' : 'none'; if (v) n++; });
+      $('#obNada').style.display = n ? 'none' : '';
+    };
+    bq.oninput = filtra; filtra();
   } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'obras'); }
 }
+function normBusq(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); }
 function volverObras() { if (MODO === 'celular') go('sup', { tab: 'obras' }); else go('obras'); }
 ACT.obraNueva = async function () {
   const n = prompt('Nombre de la obra nueva (como aparece en el tablero):');
