@@ -676,10 +676,11 @@ async function verResumen(head) {
   try {
     const r = await api('resumen');
     const obras = r.porObra.map(o => {
-      const pct = o.dotacion ? Math.min(100, Math.round(o.presentes / o.dotacion * 100)) : 0;
-      const est = o.semaforo === 'verde' ? 'Completa' : o.semaforo === 'sin_dotacion' ? 'Sin dotación cargada' : 'Faltan ' + (o.dotacion - o.presentes);
-      return '<a href="#" class="item ' + o.semaforo + '" style="text-decoration:none;color:inherit" data-go="sup" data-p=\'' + esc(JSON.stringify({ tab: 'personas', obra: o.id })) + '\'><div class="row"><div class="row" style="gap:10px;justify-content:flex-start"><span class="dot" style="background:var(--c)"></span><b>' + esc(o.nombre) + '</b></div><span class="h-display t-m">' + o.presentes + (o.dotacion ? ' / ' + o.dotacion : '') + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><div class="row"><span class="xs c-txt" style="font-weight:600">' + est + '</span><span class="xs" style="color:var(--accent);font-weight:600">Ver personas ›</span></div></a>';
+      const c = (o.turnos && o.turnos[o.actual]) || o;   // obra con dos turnos: cuenta el turno en curso
+      const pct = c.dotacion ? Math.min(100, Math.round(c.presentes / c.dotacion * 100)) : 0;
+      const est = (o.turnos && o.actual ? (o.actual === 'noche' ? 'Turno noche · ' : 'Turno día · ') : '') + (o.semaforo === 'verde' ? 'Completa' : o.semaforo === 'sin_dotacion' ? 'Sin dotación cargada' : 'Faltan ' + Math.max(0, c.dotacion - c.presentes));
+      return '<a href="#" class="item ' + o.semaforo + '" style="text-decoration:none;color:inherit" data-go="sup" data-p=\'' + esc(JSON.stringify({ tab: 'personas', obra: o.id })) + '\'><div class="row"><div class="row" style="gap:10px;justify-content:flex-start"><span class="dot" style="background:var(--c)"></span><b>' + esc(o.nombre) + '</b></div><span class="h-display t-m">' + c.presentes + (c.dotacion ? ' / ' + c.dotacion : '') + '</span></div>' +
+        (o.turnos ? '<div class="row xs muted"><span>Turno día ' + o.turnos.dia.presentes + ' / ' + o.turnos.dia.dotacion + '</span><span>Turno noche ' + o.turnos.noche.presentes + ' / ' + o.turnos.noche.dotacion + '</span></div>' : '') + '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><div class="row"><span class="xs c-txt" style="font-weight:600">' + est + '</span><span class="xs" style="color:var(--accent);font-weight:600">Ver personas ›</span></div></a>';
     }).join('') || '<div class="card small muted">Todavía no hay obras cargadas.</div>';
     const aus = r.ausentes.map(a => '<div class="row small"><span>' + esc(a.nombre) + ' <span class="muted">· ' + esc(a.legajo) + '</span></span><span class="muted">' + esc(a.obra) + '</span></div>').join('');
     supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span></div>' +
@@ -798,6 +799,8 @@ async function verPendientes(head) {
   try {
     const r = await api('pendientes');
     S.pendItems = r.items;
+    const vivos = new Set(r.items.map(it => it.kind + '|' + it.id));
+    S.pendSel = new Set([...(S.pendSel || [])].filter(k => vivos.has(k)));
     const card = (it, i) => {
       if (it.kind === 'revision') return cardRevision(it, i);
       const sub = it.kind === 'fichada' ? 'Legajo ' + esc(it.legajo) + ' · ' + (it.tipo === 'in' ? 'Entrada' : 'Salida') + ' · ' + fechaCorta(it.fecha) : 'Legajo ' + esc(it.legajo) + ' · ' + fechaCorta(it.fecha) + (it.rango ? ' · ' + esc(it.rango) : '');
@@ -805,7 +808,9 @@ async function verPendientes(head) {
       if (it.propia) acc = '<span class="xs muted">Es tuya: la tiene que aprobar otra persona.</span>';
       else if (it.kind === 'fichada' && it.foto) acc = '<button class="btn sm" data-go="revisar" data-p=\'{"i":' + i + '}\'>' + ICO.cam + ' Revisar foto</button>';
       else acc = '<div class="grid2"><button class="btn sm" data-act="decidir" data-i="' + i + '" data-d="rechazar">Rechazar</button><button class="btn sm ok" data-act="decidir" data-i="' + i + '" data-d="aprobar">Aprobar</button></div>';
-      return '<div class="item pend"><div class="row"><div><b>' + esc(it.nombre) + '</b><div class="xs muted">' + sub + '</div></div><span class="h-display t-m">' + (it.kind === 'fichada' ? esc(it.hora) : '+' + num(it.horas) + ' h') + '</span></div>' +
+      const sel = !it.propia && !(it.kind === 'fichada' && it.foto), key = it.kind + '|' + it.id;
+      const chk = sel ? '<input type="checkbox" class="pdChk" data-k="' + esc(key) + '" aria-label="Seleccionar" style="width:24px;height:24px;flex:none;margin:0 10px 0 0"' + (S.pendSel.has(key) ? ' checked' : '') + '>' : '';
+      return '<div class="item pend"><div class="row"><div class="row" style="justify-content:flex-start;gap:0;min-width:0">' + chk + '<div><b>' + esc(it.nombre) + '</b><div class="xs muted">' + sub + '</div></div></div><span class="h-display t-m">' + (it.kind === 'fichada' ? esc(it.hora) : '+' + num(it.horas) + ' h') + '</span></div>' +
         '<span class="small" style="color:var(--amber-text)">' + esc(it.obra) + ' · ' + esc(it.causaTxt) + '</span>' + (it.motivo ? '<span class="small muted">Motivo: ' + esc(it.motivo) + '</span>' : '') + mapaHtml(it, i) + acc + '</div>';
     };
     const obrasP = [...new Map(r.items.map(it => [it.obra_id || it.obra, it.obra || 'Sin obra'])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
@@ -817,15 +822,38 @@ async function verPendientes(head) {
     const filtro = obrasP.length ? '<div class="' + (MODO === 'escritorio' ? 'row' : 'stack') + '" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><select class="inp" id="pdO" style="height:44px' + (MODO === 'escritorio' ? ';max-width:360px' : '') + '"><option value="">Todas las obras (' + r.items.length + ')</option>' + obrasP.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === S.pendObra ? ' selected' : '') + '>' + esc(o[1]) + ' (' + r.items.filter(it => (it.obra_id || it.obra) === o[0]).length + ')</option>').join('') + '</select>' +
       (S.pendObra && lote.length ? '<button class="btn sm ok" data-act="decidirLote" data-d="aprobar">✔ Aprobar todo lo de esta obra (' + lote.length + ')</button><button class="btn sm" data-act="decidirLote" data-d="rechazar">Rechazar todo (' + lote.length + ')</button>' : '') + '</div>' +
       (S.pendObra && vis.length > lote.length ? '<span class="xs muted">Los que tienen foto de compañero, las salidas a revisar y los tuyos se resuelven uno por uno.</span>' : '') : '';
+    const nSel = lote.length;
+    const barra = nSel ? '<div class="card row" id="pdBar" style="position:sticky;top:0;z-index:5;gap:8px;flex-wrap:wrap;justify-content:flex-start;padding:10px 12px"><label class="row small" style="gap:8px;justify-content:flex-start"><input type="checkbox" id="pdAll" style="width:24px;height:24px"><b>Seleccionar todos (' + nSel + ')</b></label>' +
+      '<span style="flex:1"></span><button class="btn sm ok" data-act="decidirSel" data-d="aprobar" disabled>✔ Aprobar seleccionados (<span class="pdN">0</span>)</button><button class="btn sm" data-act="decidirSel" data-d="rechazar" disabled>Rechazar seleccionados (<span class="pdN">0</span>)</button></div>' : '';
     const items = Object.keys(grupos).sort().map(g => '<span class="xs muted" style="font-weight:600;letter-spacing:1px">' + esc(g.toUpperCase()) + ' · ' + grupos[g].length + '</span><div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + grupos[g].join('') + '</div>').join('') || '<div class="card small muted">No hay nada para autorizar.</div>';
     const res = r.resueltas.map(it => '<div class="row small card" style="padding:10px 12px"><span>' + esc(it.nombre) + ' · ' + esc(it.kind === 'fichada' ? it.hora : '+' + it.horas + ' h') + '<br><span class="xs muted">' + esc(it.decidido_por) + '</span></span>' + estadoTag(it.estado) + '</div>').join('');
-    setTimeout(() => { vis.forEach(([it, i]) => dibujarMapa(it, 'mapa' + i)); const so = $('#pdO'); if (so) so.onchange = e => { S.pendObra = e.target.value; volverPendientes(); }; }, 0);
+    setTimeout(() => { vis.forEach(([it, i]) => dibujarMapa(it, 'mapa' + i)); const so = $('#pdO'); if (so) so.onchange = e => { S.pendObra = e.target.value; volverPendientes(); }; selEventos(); }, 0);
     supShell(head, '<div><h1 class="h-display t-l">POR AUTORIZAR (' + r.items.length + ')</h1><span class="small muted">Fuera de zona, compañeros, salidas lejos, ingreso anticipado y extras</span></div>' +
-      filtro + '<div class="stack" style="gap:10px">' + items + '</div>' +
+      filtro + barra + '<div class="stack" style="gap:10px">' + items + '</div>' +
       (res ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px">RESUELTAS HOY</span><div class="stack" style="gap:6px">' + res + '</div>' : '') +
       '<p class="xs muted" style="margin:0">Si no se autoriza, solo se computa la jornada normal de la obra. Cada decisión queda registrada con tu usuario, fecha y hora. La sesión se cierra sola a los 5 minutos sin uso.</p>');
   } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, MODO === 'celular' ? 'sup' : 'pendientes'); }
 }
+function selEventos() {
+  const chks = [...document.querySelectorAll('.pdChk')], all = $('#pdAll');
+  const pinta = () => {
+    const n = chks.filter(c => c.checked).length;
+    document.querySelectorAll('.pdN').forEach(x => x.textContent = n);
+    document.querySelectorAll('[data-act="decidirSel"]').forEach(x => x.disabled = !n);
+    if (all) { all.checked = n > 0 && n === chks.length; all.indeterminate = n > 0 && n < chks.length; }
+  };
+  chks.forEach(c => c.onchange = () => { if (c.checked) S.pendSel.add(c.dataset.k); else S.pendSel.delete(c.dataset.k); pinta(); });
+  if (all) all.onchange = () => { chks.forEach(c => { c.checked = all.checked; if (all.checked) S.pendSel.add(c.dataset.k); else S.pendSel.delete(c.dataset.k); }); pinta(); };
+  pinta();
+}
+ACT.decidirSel = async function (b) {
+  const ok = b.dataset.d === 'aprobar';
+  const L = [...document.querySelectorAll('.pdChk')].filter(c => c.checked).map(c => { const k = c.dataset.k, j = k.indexOf('|'); return { kind: k.slice(0, j), id: k.slice(j + 1) }; });
+  if (!L.length || !confirm((ok ? '¿Aprobar' : '¿Rechazar') + ' los ' + L.length + ' pedidos seleccionados?')) return;
+  b.disabled = true;
+  try { const r = await api('decidirLote', { items: L, decision: b.dataset.d, obra: 'selección' }); S.pendSel = new Set(); toast((ok ? 'Aprobados: ' : 'Rechazados: ') + r.resueltos + (r.salteados ? ' · ' + r.salteados + ' ya estaban resueltos' : '') + '.', 5000); volverPendientes(); }
+  catch (e) { toast(e.message, 5000); b.disabled = false; }
+};
 ACT.decidirLote = async function (b) {
   const ok = b.dataset.d === 'aprobar', L = S.pendLote || [], obra = ($('#pdO') && $('#pdO').selectedOptions[0] ? $('#pdO').selectedOptions[0].textContent.replace(/ \(\d+\)$/, '') : '');
   if (!L.length || !confirm((ok ? '¿Aprobar' : '¿Rechazar') + ' los ' + L.length + ' pedidos de ' + obra + '?')) return;
@@ -959,7 +987,8 @@ V.obra = function (p) {
     (pu.ubicar ? '<button class="btn primary block" data-act="fijarGps">' + ICO.pin + ' FIJAR UBICACIÓN ACÁ</button><span class="xs muted">Parate en el ingreso de la obra. Solo supervisores, jefes de obra y Gerencia pueden fijarla.</span>' +
       '<label class="f">O cargala a mano: coordenadas o link de Google Maps<input class="inp" id="oCoords" placeholder="-34.5627, -58.4563"></label><button class="btn sm" data-act="guardarCoords">Guardar coordenadas</button>' : '') +
     '<div class="card stack small" style="gap:6px"><div class="row"><span class="muted">La obra aparece</span><span>a ' + S.obras.zonaVer + ' m</span></div><div class="row"><span class="muted">Se ficha normal</span><span>a ' + S.obras.zonaFichar + ' m</span></div></div>' +
-    '<div class="stack" style="gap:8px"><b class="small">Personas asignadas a esta obra</b><div style="display:grid;grid-template-columns:54px minmax(0,1fr) 54px;gap:8px;align-items:center"><button class="btn" data-act="dot" data-d="-1" aria-label="Restar una persona">−</button><span class="h-display center" style="font-size:36px" id="oDot">' + o.dotacion + '</span><button class="btn" data-act="dot" data-d="1" aria-label="Sumar una persona">+</button></div>' +
+    '<div class="stack" style="gap:8px"><b class="small">Personas asignadas a esta obra</b><b class="xs muted" id="oDotTit"' + (h.turno_noche ? '' : ' style="display:none"') + '>TURNO DÍA</b>' + contador('oDot', o.dotacion, '') +
+    '<div id="oDotNBox" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="xs muted">TURNO NOCHE</b>' + contador('oDotN', o.dotacion_noche || 0, 'n') + '</div>' +
     '<span class="xs muted">Semáforo: verde con la dotación completa, amarillo del 80 al 99 %, rojo por debajo del 80 %.</span><button class="btn sm" data-act="guardarDot">Guardar dotación</button></div>' +
     (pu.horario ? '<div class="card stack" style="gap:8px"><b class="small">Jornada de la obra</b>' +
       '<select class="inp" id="hModo" style="height:46px"><option value=""' + (h.jornada === '44' ? '' : ' selected') + '>Lunes a viernes + sábado</option><option value="44"' + (h.jornada === '44' ? ' selected' : '') + '>44 h · lun a jue 9 h, vie 8 h, sin sábado</option></select>' +
@@ -980,7 +1009,8 @@ V.obra = function (p) {
   horarioEventos();
 };
 ACT.volverObras = volverObras;
-ACT.dot = function (b) { const el = $('#oDot'); el.textContent = Math.max(0, (Number(el.textContent) || 0) + Number(b.dataset.d)); };
+function contador(id, v, t) { return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 54px;gap:8px;align-items:center"><button class="btn" data-act="dot" data-d="-1" data-t="' + t + '" aria-label="Restar una persona">−</button><span class="h-display center" style="font-size:36px" id="' + id + '">' + (Number(v) || 0) + '</span><button class="btn" data-act="dot" data-d="1" data-t="' + t + '" aria-label="Sumar una persona">+</button></div>'; }
+ACT.dot = function (b) { const el = $(b.dataset.t === 'n' ? '#oDotN' : '#oDot'); el.textContent = Math.max(0, (Number(el.textContent) || 0) + Number(b.dataset.d)); };
 async function guardarObra(datos, msg) {
   try {
     const r = await api('obraGuardar', Object.assign({ id: S.obraSel.id }, datos));
@@ -988,7 +1018,7 @@ async function guardarObra(datos, msg) {
     toast(msg); if (S.view === 'obra') go('obra', { i: S.obraIdx });
   } catch (e) { toast(e.message, 6000); }
 }
-ACT.guardarDot = () => guardarObra({ dotacion: Number($('#oDot').textContent) }, 'Dotación guardada.');
+ACT.guardarDot = () => guardarObra(Object.assign({ dotacion: Number($('#oDot').textContent) }, $('#oDotN') && $('#oDotNBox').style.display !== 'none' ? { dotacion_noche: Number($('#oDotN').textContent) } : {}), 'Dotación guardada.');
 ACT.guardarMails = () => guardarObra({ emails_avisos: $('#oMails').value }, 'Mails guardados.');
 ACT.guardarCoords = () => { const v = $('#oCoords').value.trim(); if (!v) return toast('Pegá las coordenadas o el link.'); guardarObra({ ubicacion: { modo: 'manual', texto: v } }, 'Ubicación guardada.'); };
 ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value } }, 'Horario guardado.');
@@ -1008,7 +1038,7 @@ function horarioEventos() {
     horarioSemanal();
   };
   ['hMi', 'hMf', 'hTi', 'hTf', 'hVf', 'hSi', 'hSf'].forEach(id => { const x = $('#' + id); if (x) x.oninput = horarioSemanal; });
-  const tn = $('#hTN'); if (tn) tn.onchange = () => { $('#hNoche').style.display = tn.checked ? '' : 'none'; $('#hLvTit').textContent = (tn.checked ? 'Turno día · ' : '') + (md.value === '44' ? 'Lunes a jueves' : 'Lunes a viernes'); };
+  const tn = $('#hTN'); if (tn) tn.onchange = () => { $('#hNoche').style.display = tn.checked ? '' : 'none'; $('#oDotNBox').style.display = tn.checked ? '' : 'none'; $('#oDotTit').style.display = tn.checked ? '' : 'none'; $('#hLvTit').textContent = (tn.checked ? 'Turno día · ' : '') + (md.value === '44' ? 'Lunes a jueves' : 'Lunes a viernes'); };
 }
 ACT.fijarGps = async function (b) {
   if (!confirm('¿Estás parado en el ingreso de ' + S.obraSel.nombre + '? Se va a guardar tu ubicación actual como la de la obra.')) return;
