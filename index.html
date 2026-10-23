@@ -432,7 +432,7 @@ ACT.fichar = async function (btn) {
     const pos = await gps(true);
     const r = await api('fichar', Object.assign({ tipo: S.est.proximo, obra_id: obra, motivo: motivo }, pos));
     if (navigator.vibrate) navigator.vibrate(120);
-    go('listo', { f: r.fichada });
+    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0 });
   } catch (e) {
     toast(e.message, 6000);
     btn.disabled = false; btn.innerHTML = txt;
