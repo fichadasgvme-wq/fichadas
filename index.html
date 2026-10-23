@@ -507,6 +507,7 @@ V.listo = function (p) {
     '<div class="row"><span class="muted">Comprobante</span><span>' + esc(f.comprobante) + '</span></div>' +
     '<div class="row"><span class="muted">Estado</span><span style="color:' + (ok ? 'var(--green-text)' : 'var(--amber-text)') + ';font-weight:600">' + (ok ? 'Guardada' : 'Pendiente de aprobación') + '</span></div></div>' +
     '<div class="grow"></div>' +
+    (p.sinPedir > 0 ? '<div class="card warn stack small" style="gap:8px"><span>Fichaste <b>' + num(p.sinPedir) + ' h</b> fuera del horario de la obra. Si no pedís autorización, tu jornada cierra en el horario de la obra.</span><button class="btn sm" data-act="pedirExtra" data-f="' + esc(f.fecha) + '" data-h="' + p.sinPedir + '">Pedir autorización de horas extra</button></div>' : '') +
     (f.tipo === 'in' ? '<p class="center small muted" style="margin:0">Al irte, abrí la app y tocá <b>SALIDA</b>. Si te olvidás, a la noche reciben el aviso tu capataz, tu supervisor y tu jefe de obra.</p>' : '') +
     '<div class="grid2"><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
 };
@@ -635,15 +636,24 @@ V.horas = async function (p) {
       const tot = d.normales + d.al50 + d.al100;
       const det = [d.normales ? num(d.normales) + ' normales' : '', d.al50 ? num(d.al50) + ' al 50 %' : '', d.al100 ? num(d.al100) + ' al 100 %' : ''].filter(Boolean).join(' · ');
       const av = d.avisos.map(a => '<div class="xs" style="color:' + (/autorizadas por/.test(a) ? 'var(--green-text)' : /pendiente|Falta|rechazada|no autorizadas/.test(a) ? 'var(--amber-text)' : 'var(--muted)') + '">' + esc(a) + '</div>').join('');
-      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + '</div>';
+      const sp = d.sinPedir > 0 ? '<div class="xs" style="color:var(--amber-text)">' + num(d.sinPedir) + ' h fuera del horario sin pedir: no suman</div>' + (d.puedePedir ? '<button class="btn sm" style="align-self:flex-start" data-act="pedirExtra" data-f="' + esc(d.fecha) + '" data-h="' + d.sinPedir + '">Pedir autorización (' + num(d.sinPedir) + ' h)</button>' : '') : '';
+      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + '</div>';
     }).join('') : '<div class="card small muted">No hay fichadas en este mes.</div>';
     shell('<div class="row"><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + prev + '"}\' aria-label="Mes anterior">‹</button><h1 class="h-display t-l">MIS HORAS · ' + MESES[m - 1].toUpperCase() + '</h1><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + next + '"}\' aria-label="Mes siguiente">›</button></div>' +
-      '<span class="small muted">Cuentan las horas dentro del horario de la obra, con el almuerzo descontado. El ingreso anticipado y las extras suman solo si los autorizan.</span>' +
+      '<span class="small muted">Cuentan las horas dentro del horario de la obra, con el almuerzo descontado. Si llegaste antes o te quedaste después, pedí la autorización: suman solo si la aprueban.</span>' +
       '<div class="grid3"><div class="kpi"><span class="xs muted">Normales</span><b>' + num(t.normales) + '</b></div><div class="kpi"><span class="xs muted">Al 50 %</span><b style="color:var(--accent)">' + num(t.al50) + '</b></div><div class="kpi"><span class="xs muted">Al 100 %</span><b style="color:#B57F00">' + num(t.al100) + '</b></div></div>' +
       (t.pendientes ? '<div class="card warn small">Tenés ' + num(t.pendientes) + ' h esperando autorización. Si no se autorizan, no suman.</div>' : '') +
       '<div class="stack" style="gap:8px">' + dias + '</div>' +
       '<a href="#" data-act="pedirPin" class="center small">Pedir cambio de PIN a Gerencia</a>', 'horas');
   } catch (e) { errorBox(e.message, 'horas', 'horas'); }
+};
+ACT.pedirExtra = async function (b) {
+  const m = prompt('¿Qué trabajo hiciste fuera del horario? (' + num(Number(b.dataset.h)) + ' h)');
+  if (m === null) return;
+  if (!m.trim()) return toast('Contá el motivo.');
+  b.disabled = true;
+  try { await api('pedirExtra', { fecha: b.dataset.f, motivo: m.trim() }); toast('Pedido enviado. Te avisamos cuando lo aprueben.', 5000); if (S.view === 'horas') go('horas'); else b.outerHTML = '<span class="small" style="color:var(--green-text)">Pedido enviado ✔</span>'; }
+  catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
 ACT.pedirPin = async function () {
   if (!confirm('¿Pedir a Gerencia un PIN nuevo?')) return;
