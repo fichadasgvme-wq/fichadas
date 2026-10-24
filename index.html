@@ -430,7 +430,17 @@ ACT.fichar = async function (btn) {
   btn.disabled = true; btn.innerHTML = '<b style="font-size:24px">REGISTRANDO…</b>';
   try {
     const pos = await gps(true);
-    const r = await api('fichar', Object.assign({ tipo: S.est.proximo, obra_id: obra, motivo: motivo }, pos));
+    const datos = Object.assign({ tipo: S.est.proximo, obra_id: obra, motivo: motivo }, pos);
+    let r;
+    try { r = await api('fichar', datos); }
+    catch (e) {
+      if (e.code !== 'FOTO') throw e;
+      // Posible mismo celular: foto de verificación de la cara y se vuelve a enviar.
+      const foto = await selfie(e.message);
+      if (!foto) throw new Error('Sin la foto no se puede registrar la fichada.');
+      btn.innerHTML = '<b style="font-size:24px">REGISTRANDO…</b>';
+      r = await api('fichar', Object.assign({}, datos, { foto: foto }));
+    }
     if (navigator.vibrate) navigator.vibrate(120);
     go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0 });
   } catch (e) {
@@ -438,6 +448,35 @@ ACT.fichar = async function (btn) {
     btn.disabled = false; btn.innerHTML = txt;
   }
 };
+
+/* ---------- Foto de verificación (selfie) ----------
+ * Pantalla completa con la cámara frontal; devuelve la foto (JPEG) o null si cancela. */
+function selfie(msg) {
+  return new Promise(res => {
+    const box = document.createElement('div');
+    box.id = 'selfieBox';
+    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;gap:12px;padding:16px;color:#fff';
+    box.innerHTML = '<b style="font-size:20px">FOTO DE VERIFICACIÓN</b><span class="small" style="color:#ddd">' + esc(msg || 'Sacate una foto de la cara.') + '</span>' +
+      '<video id="selfieCam" playsinline muted autoplay style="flex:1;min-height:0;width:100%;object-fit:cover;border-radius:12px;background:#111;transform:scaleX(-1)"></video>' +
+      '<div class="grid2"><button class="btn" id="selfieNo">Cancelar</button><button class="btn ok" id="selfieSi">📷 SACAR FOTO</button></div>';
+    document.body.appendChild(box);
+    let stream = null;
+    const fin = v => { if (stream) stream.getTracks().forEach(t => t.stop()); box.remove(); res(v); };
+    const v = box.querySelector('#selfieCam');
+    (async () => {
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 } }, audio: false }); v.srcObject = stream; await v.play(); }
+      catch (e) { toast('No pudimos abrir la cámara. Revisá el permiso de cámara del navegador para esta página.', 6000); }
+    })();
+    box.querySelector('#selfieNo').onclick = () => fin(null);
+    box.querySelector('#selfieSi').onclick = () => {
+      if (!v.videoWidth) { toast('Esperá a que se vea la cámara.'); return; }
+      const w = Math.min(720, v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(v, 0, 0, w, h);
+      fin(cv.toDataURL('image/jpeg', 0.75));
+    };
+  });
+}
 
 /* ---------- Fichada automática al abrir la app ----------
  * Una vez por apertura: si al abrir la app está dentro de la zona de una sola obra, ficha la entrada sola;
@@ -888,10 +927,12 @@ V.revisar = async function (p) {
     const r = await api('foto', { id: it.id });
     let ctl = {}; try { ctl = JSON.parse(it.controles || '{}'); } catch (e) { }
     const chips = (ctl.caras === 1 ? '<span class="tag ok">Una sola cara</span>' : '<span class="tag warn">Cara no verificada automáticamente</span>') + '<span class="tag ok">Foto en vivo</span>';
-    shell('<div class="row" style="justify-content:flex-start"><button class="btn sm" data-act="volverPend" aria-label="Volver">‹</button><h1 class="h-display t-l">REVISAR FICHADA DE COMPAÑERO</h1></div>' +
+    const verif = it.causa === 'mismo_equipo';
+    shell('<div class="row" style="justify-content:flex-start"><button class="btn sm" data-act="volverPend" aria-label="Volver">‹</button><h1 class="h-display t-l">' + (verif ? 'REVISAR FOTO DE VERIFICACIÓN' : 'REVISAR FICHADA DE COMPAÑERO') + '</h1></div>' +
+      (verif ? '<span class="small" style="color:var(--amber-text)">' + esc(it.causaTxt) + '. Se sacó esta foto al fichar: confirmá que es la persona.</span>' : '') +
       '<img class="photo" src="' + r.foto + '" alt="Foto tomada al fichar" style="max-height:52vh;object-fit:contain;background:#000">' +
       '<div class="row"><div><b style="font-size:18px">' + esc(it.nombre) + '</b><div class="small muted">Legajo ' + esc(it.legajo) + ' · ' + (it.tipo === 'in' ? 'Entrada' : 'Salida') + ' · ' + fechaCorta(it.fecha) + '</div></div><span class="h-display t-l">' + esc(it.hora) + '</span></div>' +
-      '<div class="card stack small" style="gap:6px"><div class="row"><span class="muted">Lo fichó</span><span>' + esc(it.fichado_por) + '</span></div><div class="row"><span class="muted">Obra</span><span>' + esc(it.obra) + '</span></div><div class="row"><span class="muted">Motivo</span><span>' + esc(it.motivo) + '</span></div></div>' +
+      '<div class="card stack small" style="gap:6px"><div class="row"><span class="muted">' + (verif ? 'Fichó' : 'Lo fichó') + '</span><span>' + esc(verif ? it.nombre + ' (desde su celular)' : it.fichado_por) + '</span></div><div class="row"><span class="muted">Obra</span><span>' + esc(it.obra) + '</span></div><div class="row"><span class="muted">Motivo</span><span>' + esc(it.motivo) + '</span></div></div>' +
       '<div class="row" style="justify-content:flex-start;flex-wrap:wrap;gap:6px">' + chips + '</div>' + mapaHtml(it, 'R') +
       '<div class="grid2"><button class="btn danger" data-act="decidir" data-i="' + p.i + '" data-d="rechazar">Rechazar</button><button class="btn ok" data-act="decidir" data-i="' + p.i + '" data-d="aprobar">Es él · Autorizar</button></div>' +
       '<span class="xs muted center">Queda registrado quién decidió. La foto se borra sola a los 60 días.</span>');
