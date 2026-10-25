@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-24.1">
+<meta name="app-ver" content="2026-10-24.2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -444,7 +444,7 @@ ACT.fichar = async function (btn) {
       r = await api('fichar', Object.assign({}, datos, { foto: foto }));
     }
     if (navigator.vibrate) navigator.vibrate(120);
-    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0 });
+    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0, corridoPosible: r.corridoPosible || 0 });
   } catch (e) {
     toast(e.message, 6000);
     btn.disabled = false; btn.innerHTML = txt;
@@ -582,6 +582,7 @@ V.listo = function (p) {
     '<div class="row"><span class="muted">Estado</span><span style="color:' + (ok ? 'var(--green-text)' : 'var(--amber-text)') + ';font-weight:600">' + (ok ? 'Guardada' : 'Pendiente de aprobación') + '</span></div></div>' +
     '<div class="grow"></div>' +
     (p.sinPedir > 0 ? '<div class="card warn stack small" style="gap:8px"><span>Fichaste <b>' + num(p.sinPedir) + ' h</b> fuera del horario de la obra. Si no pedís autorización, tu jornada cierra en el horario de la obra.</span><button class="btn sm" data-act="pedirExtra" data-f="' + esc(f.fecha) + '" data-h="' + p.sinPedir + '">Pedir autorización de horas extra</button></div>' : '') +
+    (p.corridoPosible > 0 ? '<div class="card stack small" style="gap:8px"><span>¿Trabajaste de corrido, sin parar a almorzar? Pedí que te autoricen <b>' + num(p.corridoPosible) + ' h</b>.</span><button class="btn sm" data-act="pedirExtra" data-t="corrido" data-f="' + esc(f.fecha) + '" data-h="' + p.corridoPosible + '">Trabajé de corrido · pedir autorización</button></div>' : '') +
     (f.tipo === 'in' ? '<p class="center small muted" style="margin:0">Al irte, abrí la app y tocá <b>SALIDA</b>. Si te olvidás, a la noche reciben el aviso tu capataz, tu supervisor y tu jefe de obra.</p>' : '') +
     '<div class="grid2"><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
 };
@@ -722,11 +723,12 @@ V.horas = async function (p) {
   } catch (e) { errorBox(e.message, 'horas', 'horas'); }
 };
 ACT.pedirExtra = async function (b) {
-  const m = prompt('¿Qué trabajo hiciste fuera del horario? (' + num(Number(b.dataset.h)) + ' h)');
+  const corrido = b.dataset.t === 'corrido';
+  const m = prompt(corrido ? '¿Por qué trabajaste sin parar a almorzar? (' + num(Number(b.dataset.h)) + ' h)' : '¿Qué trabajo hiciste fuera del horario? (' + num(Number(b.dataset.h)) + ' h)');
   if (m === null) return;
   if (!m.trim()) return toast('Contá el motivo.');
   b.disabled = true;
-  try { await api('pedirExtra', { fecha: b.dataset.f, motivo: m.trim() }); toast('Pedido enviado. Te avisamos cuando lo aprueben.', 5000); if (S.view === 'horas') go('horas'); else b.outerHTML = '<span class="small" style="color:var(--green-text)">Pedido enviado ✔</span>'; }
+  try { await api('pedirExtra', { fecha: b.dataset.f, motivo: m.trim(), tipo: corrido ? 'corrido' : '' }); toast('Pedido enviado. Te avisamos cuando lo aprueben.', 5000); if (S.view === 'horas') go('horas'); else b.outerHTML = '<span class="small" style="color:var(--green-text)">Pedido enviado ✔</span>'; }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
 ACT.pedirPin = async function () {
@@ -755,6 +757,39 @@ V.sup = function (p) {
 };
 function supShell(head, html) { shell((MODO === 'celular' ? head : '') + html, MODO === 'celular' ? 'sup' : null); }
 
+/* Botones del resumen: Presentes / Ausentes / Por autorizar muestran la gente agrupada por obra. */
+function kpiBtn(k, txt, n, color) {
+  const on = S.resKpi === k;
+  return '<button class="kpi" data-act="resKpi" data-k="' + k + '" aria-expanded="' + on + '" style="text-align:left;cursor:pointer;font:inherit;color:inherit;' + (on ? 'border:2px solid ' + color + ';' : '') + '"><span class="xs muted">' + txt + ' ' + (on ? '▴' : '▾') + '</span><b style="color:' + color + '">' + n + '</b></button>';
+}
+function panelKpi(k) {
+  const r = S.resumen; if (!k || !r) return '';
+  const grupos = {}, ids = {};
+  const add = (obra, id, html) => { const g = obra || 'Sin obra'; (grupos[g] = grupos[g] || []).push(html); if (id) ids[g] = id; };
+  let titulo = '', vacio = '';
+  if (k === 'presentes') {
+    titulo = 'PRESENTES POR OBRA'; vacio = 'Todavía no fichó nadie.';
+    (r.presentesLista || []).forEach(x => add(x.obra, x.obra_id, '<div class="row small"><span>' + esc(x.nombre) + '</span><span class="muted">entró ' + esc(x.hora) + (x.turno === 'n' ? ' · noche' : '') + '</span></div>'));
+  } else if (k === 'ausentes') {
+    titulo = 'AUSENTES POR OBRA ASIGNADA'; vacio = 'No falta nadie.';
+    r.ausentes.forEach(a => add(a.obra, '', '<div class="row small"><span>' + esc(a.nombre) + '</span><span class="muted">legajo ' + esc(a.legajo) + '</span></div>'));
+  } else {
+    titulo = 'POR AUTORIZAR POR OBRA'; vacio = 'No hay nada para autorizar.';
+    (r.pendLista || []).forEach(x => add(x.obra, x.obra_id, '<div class="row small" style="align-items:flex-start"><span>' + esc(x.nombre) + '</span><span class="muted" style="text-align:right">' + esc(x.txt) + (x.fecha !== r.fecha ? ' · ' + fechaCorta(x.fecha) : '') + '</span></div>'));
+  }
+  const html = Object.keys(grupos).sort((a, b) => grupos[b].length - grupos[a].length || a.localeCompare(b)).map(g =>
+    '<div class="card stack" style="gap:6px"><div class="row"><b class="small">' + esc(g) + '</b><span class="tag">' + grupos[g].length + '</span></div>' + grupos[g].join('') +
+    (k === 'pend' && S.user.aprueba ? '<button class="btn sm" style="align-self:flex-start" data-act="irPend" data-o="' + esc(ids[g] || g) + '">Ver y autorizar ›</button>' : '') +
+    (k === 'presentes' && ids[g] ? '<a href="#" class="xs" style="color:var(--accent);font-weight:600" data-go="sup" data-p=\'' + esc(JSON.stringify({ tab: 'personas', obra: ids[g] })) + '\'>Ver personas ›</a>' : '') + '</div>').join('');
+  return '<div class="stack" style="gap:8px"><span class="xs muted" style="font-weight:600;letter-spacing:1px">' + titulo + '</span>' + (html || '<div class="card small muted">' + vacio + '</div>') + '</div>';
+}
+ACT.resKpi = function (b) {
+  S.resKpi = S.resKpi === b.dataset.k ? '' : b.dataset.k;
+  const r = S.resumen, g = b.parentNode;
+  g.innerHTML = kpiBtn('presentes', 'Presentes', r.presentes, 'var(--green)') + kpiBtn('ausentes', 'Ausentes', r.ausentes.length, 'var(--red)') + kpiBtn('pend', 'Por autorizar', r.pendientes, '#B57F00');
+  $('#resPanel').innerHTML = panelKpi(S.resKpi);
+};
+ACT.irPend = function (b) { S.pendObra = b.dataset.o; if (MODO === 'celular') go('sup', { tab: 'pendientes' }); else go('pendientes'); };
 async function verResumen(head) {
   cargando('Cargando el resumen…', 'sup');
   try {
@@ -766,9 +801,11 @@ async function verResumen(head) {
       return '<a href="#" class="item ' + o.semaforo + '" style="text-decoration:none;color:inherit" data-go="sup" data-p=\'' + esc(JSON.stringify({ tab: 'personas', obra: o.id })) + '\'><div class="row"><div class="row" style="gap:10px;justify-content:flex-start"><span class="dot" style="background:var(--c)"></span><b>' + esc(o.nombre) + '</b></div><span class="h-display t-m">' + c.presentes + (c.dotacion ? ' / ' + c.dotacion : '') + '</span></div>' +
         (o.turnos ? '<div class="row xs muted"><span>Turno día ' + o.turnos.dia.presentes + ' / ' + o.turnos.dia.dotacion + '</span><span>Turno noche ' + o.turnos.noche.presentes + ' / ' + o.turnos.noche.dotacion + '</span></div>' : '') + '<div class="bar"><i style="width:' + pct + '%;background:var(--c)"></i></div><div class="row"><span class="xs c-txt" style="font-weight:600">' + est + '</span><span class="xs" style="color:var(--accent);font-weight:600">Ver personas ›</span></div></a>';
     }).join('') || '<div class="card small muted">Todavía no hay obras cargadas.</div>';
+    S.resumen = r;
     const aus = r.ausentes.map(a => '<div class="row small"><span>' + esc(a.nombre) + ' <span class="muted">· ' + esc(a.legajo) + '</span></span><span class="muted">' + esc(a.obra) + '</span></div>').join('');
     supShell(head, '<div class="row"><div><h1 class="h-display t-l">RESUMEN DE HOY</h1><span class="small muted">' + fechaCorta(r.fecha) + ' · ' + hora() + '</span></div><span class="tag" style="background:var(--accent);color:#fff">' + esc(S.user.rolTxt) + '</span></div>' +
-      '<div class="grid3"><div class="kpi"><span class="xs muted">Presentes</span><b style="color:var(--green)">' + r.presentes + '</b></div><div class="kpi"><span class="xs muted">Ausentes</span><b style="color:var(--red)">' + r.ausentes.length + '</b></div><div class="kpi"><span class="xs muted">Por autorizar</span><b style="color:#B57F00">' + r.pendientes + '</b></div></div>' +
+      '<div class="grid3">' + kpiBtn('presentes', 'Presentes', r.presentes, 'var(--green)') + kpiBtn('ausentes', 'Ausentes', r.ausentes.length, 'var(--red)') + kpiBtn('pend', 'Por autorizar', r.pendientes, '#B57F00') + '</div>' +
+      '<div id="resPanel">' + panelKpi(S.resKpi) + '</div>' +
       avisoPedidos(r.pedidosGerencia) +
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PRESENTES POR OBRA · CONTRA DOTACIÓN</span><div class="stack" style="gap:8px">' + obras + '</div>' +
       '<details class="card"><summary>Ausentes hoy (' + r.ausentes.length + ')</summary><div class="stack" style="gap:6px;margin-top:10px">' + (aus || '<span class="small muted">Nadie.</span>') + '</div></details>');
