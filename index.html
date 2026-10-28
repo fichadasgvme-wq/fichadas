@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-24.2">
+<meta name="app-ver" content="2026-10-28.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -873,6 +873,38 @@ ACT.persBaja = async function (b) {
   try { const r = await api('personaBaja', { legajo: b.dataset.l }); toast(b.dataset.n + ' quedó dado de baja' + (r.sesionesCerradas ? ' · ' + r.sesionesCerradas + ' sesión cerrada' : '') + '.', 5000); go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' }); }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
+/* Editar datos de una persona (todo salvo nombre y apellido). */
+ACT.persEditar = function (b) {
+  const x = (S.pers.personas || []).find(p => p.legajo === b.dataset.l); if (!x) return;
+  const box = [...document.querySelectorAll('.persEd')].find(e => e.dataset.l === x.legajo);
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  const lista = (id, vals) => '<datalist id="' + id + '">' + [...new Set(vals.filter(Boolean))].sort().map(v => '<option value="' + esc(v) + '">').join('') + '</datalist>';
+  const ps = S.pers.personas || [];
+  const campo = (k, lab, v, extra) => '<label class="f">' + lab + '<input class="inp" data-k="' + k + '" value="' + esc(v || '') + '"' + (extra || '') + '></label>';
+  box.innerHTML = '<div class="card stack" style="gap:8px;margin-top:8px"><b class="small">Editar datos de ' + esc(x.nombre) + '</b><span class="xs muted">El nombre y apellido no se cambian acá.</span>' +
+    campo('legajo_nuevo', 'Número de legajo', x.legajo, ' inputmode="numeric"') +
+    campo('telefono', 'Teléfono', x.telefono, ' type="tel" placeholder="11 5555-5555"') +
+    campo('categoria', 'Categoría', x.categoria, ' list="dlCat"') + lista('dlCat', ps.map(p => p.categoria)) +
+    '<label class="f">Grupo<select class="inp" data-k="grupo">' + ['', 'Propio', 'Subc'].concat(x.grupo && ['Propio', 'Subc'].indexOf(x.grupo) < 0 ? [x.grupo] : []).map(g => '<option' + (g === (x.grupo || '') ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></label>' +
+    campo('contratista', 'Contratista', x.contratista, ' list="dlCon"') + lista('dlCon', ps.map(p => p.contratista)) +
+    '<label class="f">Obra asignada<select class="inp" data-k="obra_asignada"><option value="">Sin obra</option>' + [...new Set((S.pers.obras || []).map(o => o.nombre).concat(x.obra_asignada ? [x.obra_asignada] : []))].sort().map(n => '<option' + (n === x.obra_asignada ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></label>' +
+    campo('email', 'Email', x.email, ' type="email"') +
+    campo('sector', 'Sector', x.sector, ' list="dlSec"') + lista('dlSec', ps.map(p => p.sector).concat(['Fábrica', 'Almacén', 'Administración', 'Oficina técnica'])) +
+    '<div class="grid2"><button class="btn sm" data-act="persEditar" data-l="' + esc(x.legajo) + '">Cancelar</button><button class="btn sm ok" data-act="persGuardar" data-l="' + esc(x.legajo) + '">Guardar</button></div></div>';
+};
+ACT.persGuardar = async function (b) {
+  const x = (S.pers.personas || []).find(p => p.legajo === b.dataset.l);
+  const box = [...document.querySelectorAll('.persEd')].find(e => e.dataset.l === b.dataset.l);
+  const datos = {}; box.querySelectorAll('[data-k]').forEach(i => { datos[i.dataset.k] = i.value.trim(); });
+  if (datos.legajo_nuevo && datos.legajo_nuevo.replace(/^0+/, '') !== String(x.legajo).replace(/^0+/, '') &&
+    !confirm('¿Cambiar el legajo de ' + x.nombre + ' de ' + x.legajo + ' a ' + datos.legajo_nuevo + '? Se pasa todo su historial al legajo nuevo y sigue entrando con el mismo PIN.')) return;
+  b.disabled = true;
+  try {
+    const r = await api('personaEditar', { legajo: x.legajo, datos: datos });
+    toast(r.cambios ? 'Datos guardados.' : 'No había cambios.');
+    go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' });
+  } catch (e) { toast(e.message, 5000); b.disabled = false; }
+};
 ACT.persAlta = async function (b) {
   if (!confirm('¿Reactivar a ' + b.dataset.n + '? Va a poder volver a ingresar con su legajo y PIN.')) return;
   try { await api('personaBaja', { legajo: b.dataset.l, reactivar: true }); toast(b.dataset.n + ' reactivado.'); go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' }); }
@@ -887,7 +919,8 @@ function tarjetaPersona(x) {
   return '<details class="item" style="border-left:4px solid ' + e[1] + '"><summary style="list-style:none"><div class="row" style="gap:10px"><div style="min-width:0"><b>' + esc(x.nombre) + '</b><div class="xs muted">Legajo ' + esc(x.legajo) + (x.categoria ? ' · ' + esc(x.categoria) : '') + '</div></div>' +
     '<div style="text-align:right;flex:none"><span class="xs" style="font-weight:600;color:' + e[2] + '">' + e[0] + '</span><div class="small">' + (x.entrada ? esc(x.entrada) + (x.salida ? ' – ' + esc(x.salida) : ' –') : '—') + '</div>' + (x.pendientes ? '<span class="tag warn">' + x.pendientes + ' pendiente' + (x.pendientes > 1 ? 's' : '') + '</span>' : '') + '</div></div></summary>' +
     '<div class="stack" style="gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
-    '<span class="xs muted" style="font-weight:600;letter-spacing:1px">DATOS</span>' + fila('Legajo', esc(x.legajo)) + fila('Categoría', esc(x.categoria)) + fila('Rol', esc(x.rol)) + fila('Grupo', esc(x.grupo) + (x.contratista ? ' · ' + esc(x.contratista) : '')) + fila('Obra asignada', esc(x.obra_asignada)) + fila('Email', esc(x.email)) +
+    '<span class="xs muted" style="font-weight:600;letter-spacing:1px">DATOS</span>' + fila('Legajo', esc(x.legajo)) + fila('Categoría', esc(x.categoria)) + fila('Rol', esc(x.rol)) + fila('Grupo', esc(x.grupo) + (x.contratista ? ' · ' + esc(x.contratista) : '')) + fila('Obra asignada', esc(x.obra_asignada)) + fila('Teléfono', x.telefono ? '<a href="tel:' + esc(String(x.telefono).replace(/[^\d+]/g, '')) + '">' + esc(x.telefono) + '</a>' : '') + fila('Email', esc(x.email)) + fila('Sector', esc(x.sector)) +
+    (S.pers && S.pers.puedeEditar ? '<button class="btn sm" style="align-self:flex-start;margin-top:4px" data-act="persEditar" data-l="' + esc(x.legajo) + '">✏️ Editar datos</button><div class="persEd" data-l="' + esc(x.legajo) + '"></div>' : '') +
     (S.pers && S.pers.puedeBaja ? '<button class="btn sm" style="align-self:flex-start;margin-top:4px" data-act="persBaja" data-l="' + esc(x.legajo) + '" data-n="' + esc(x.nombre) + '">Dar de baja · cortar el acceso</button>' : '') +
     '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">HOY</span>' + fila('Obra', esc(x.obra) || '—') + fila('Entrada', esc(x.entrada) || '—') + fila('Salida', esc(x.salida) || (x.estado === 'adentro' ? 'Todavía trabajando' : '—')) + fila('Horas', hs) +
     (fs ? '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:6px">FICHADAS</span>' + fs : '') + '</div></details>';
@@ -1276,15 +1309,15 @@ ACT.impBajar = async function (b) {
   b.disabled = true;
   try {
     const r = await api('personalExport'); await loadScript(XLSX_URL);
-    const ws = XLSX.utils.aoa_to_sheet([['Legajo', 'Apellido y nombre', 'Categoría', 'Grupo', 'Contratista', 'Obra asignada', 'Rol', 'Email', 'PIN', 'Activo', 'Sector', 'Alta', 'Baja']].concat(r.filas.map(p => [p.legajo, p.nombre, p.categoria, p.grupo, p.contratista, p.obra_asignada, p.rol, p.email, '', p.activo, p.sector, p.alta, p.baja])));
-    ws['!cols'] = [{ wch: 9 }, { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 26 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 11 }, { wch: 22 }];
+    const ws = XLSX.utils.aoa_to_sheet([['Legajo', 'Apellido y nombre', 'Categoría', 'Grupo', 'Contratista', 'Obra asignada', 'Rol', 'Email', 'PIN', 'Activo', 'Sector', 'Alta', 'Baja', 'Teléfono']].concat(r.filas.map(p => [p.legajo, p.nombre, p.categoria, p.grupo, p.contratista, p.obra_asignada, p.rol, p.email, '', p.activo, p.sector, p.alta, p.baja, p.telefono || ''])));
+    ws['!cols'] = [{ wch: 9 }, { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 26 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 11 }, { wch: 22 }, { wch: 16 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Personal');
     XLSX.writeFile(wb, 'personal_gvme_' + hoyISO() + '.xlsx'); toast(r.filas.length + ' personas bajadas.');
   } catch (e) { toast(e.message, 5000); }
   b.disabled = false;
 };
 function clave(h) { return String(h || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' '); }
-const COLS = { 'legajo': 'legajo', 'apellido y nombre': 'nombre', 'nombre': 'nombre', 'nombre y apellido': 'nombre', 'categoria': 'categoria', 'grupo': 'grupo', 'contratista': 'contratista', 'obra asignada': 'obra_asignada', 'obra': 'obra_asignada', 'rol': 'rol', 'email': 'email', 'mail': 'email', 'correo': 'email', 'pin': 'pin', 'pin (ultimos 4 dni)': 'pin', 'activo': 'activo', 'sector': 'sector' };
+const COLS = { 'legajo': 'legajo', 'apellido y nombre': 'nombre', 'nombre': 'nombre', 'nombre y apellido': 'nombre', 'categoria': 'categoria', 'grupo': 'grupo', 'contratista': 'contratista', 'obra asignada': 'obra_asignada', 'obra': 'obra_asignada', 'rol': 'rol', 'email': 'email', 'mail': 'email', 'correo': 'email', 'pin': 'pin', 'pin (ultimos 4 dni)': 'pin', 'activo': 'activo', 'sector': 'sector', 'telefono': 'telefono', 'tel': 'telefono', 'celular': 'telefono' };
 async function leerExcel(ev) {
   const f = ev.target.files[0]; if (!f) return;
   $('#impNombre').textContent = f.name;
