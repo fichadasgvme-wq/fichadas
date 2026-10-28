@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-28.1">
+<meta name="app-ver" content="2026-10-28.2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -132,6 +132,20 @@ const TK = 'gvme_fichadas_' + MODO;
 const LOGO = 'logo.png';
 const S = { token: store.get(TK), user: null, view: '', params: {}, est: null, pos: null, mes: '', comp: null, stream: null };
 const app = document.getElementById('app');
+/* Abrir en el navegador del teléfono (no dentro de WhatsApp), para poder instalarla como app. */
+const UA = navigator.userAgent || '';
+const ES_ANDROID = /Android/i.test(UA), ES_IOS = /iPhone|iPad|iPod/i.test(UA);
+const ES_STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const URL_APP = location.origin + location.pathname;
+function abrirEnNavegador() {
+  if (ES_ANDROID) location.href = 'intent://' + location.host + location.pathname + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(URL_APP) + ';end';
+  else if (ES_IOS) location.href = 'x-safari-https://' + location.host + location.pathname;
+}
+// Link para mandar por WhatsApp: …/fichadas/?abrir → salta solo al navegador (Chrome en Android; Safari en iPhone si está dentro de otra app).
+if (/[?&]abrir(&|=|$)/.test(location.search) && !ES_STANDALONE && MODO === 'celular') {
+  try { history.replaceState(null, '', URL_APP); } catch (e) { }
+  if (ES_ANDROID || (ES_IOS && !/Safari\//.test(UA))) abrirEnNavegador();
+}
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const ICO = {
@@ -212,7 +226,7 @@ function wmUpdate() {
 setInterval(wmUpdate, 60000);
 let ultimaAccion = Date.now();
 ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ultimaAccion = Date.now(); }, { passive: true }));
-const VISTAS_SUP = ['sup', 'personas', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
+const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
 setInterval(() => {
   if (!S.user || Date.now() - ultimaAccion < 5 * 60000) return;
   if (MODO === 'escritorio') { salir(false); toast('La sesión se cerró por 5 minutos sin uso.', 6000); }
@@ -254,7 +268,7 @@ function errorBox(msg, nav, reintentar) {
   shell('<div class="card bad stack"><b>No se pudo completar</b><span>' + esc(msg) + '</span>' + (reintentar ? '<button class="btn" data-go="' + reintentar + '">Reintentar</button>' : '') + '</div>', nav);
 }
 
-app.addEventListener('click', e => {
+document.addEventListener('click', e => {
   const g = e.target.closest('[data-go]');
   if (g) { e.preventDefault(); go(g.dataset.go, g.dataset.p ? JSON.parse(g.dataset.p) : {}); return; }
   const a = e.target.closest('[data-act]');
@@ -523,6 +537,28 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { ocultoDesde = Date.now(); autoCancelar(); return; }
   if (ocultoDesde && Date.now() - ocultoDesde > 2 * 60000 && S.user && MODO === 'celular') { S.autoUsado = false; if (S.view === 'fichar' || S.view === 'listo') go('fichar'); }
 });
+
+/* ---------- Instalar como app ----------
+ * En Chrome (Android) aparece «Instalar»; dentro de WhatsApp u otra app, «Abrir en Chrome»;
+ * en iPhone, cómo agregarla a la pantalla de inicio. No se muestra si ya está instalada. */
+let promptInstalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); promptInstalar = e; barraInstalar(); });
+window.addEventListener('appinstalled', () => { const b = $('#instBox'); if (b) b.remove(); store.set('inst_no', '1'); });
+function barraInstalar() {
+  if (ES_STANDALONE || MODO !== 'celular' || (store.get('inst_no') === '1' && !promptInstalar)) return;
+  let html;
+  if (promptInstalar) html = '<span class="small"><b>📲 Instalá Fichadas como app</b> y abrila desde la pantalla de inicio.</span><button class="btn sm" style="background:#fff;color:#346CB6" data-act="instalar">Instalar</button>';
+  else if (ES_ANDROID) html = '<span class="small"><b>¿La abriste desde WhatsApp?</b> Abrila en Chrome para poder instalarla como app.</span><button class="btn sm" style="background:#fff;color:#346CB6" data-act="abrirNav">Abrir en Chrome</button>';
+  else if (ES_IOS) html = '<span class="small"><b>Para tenerla como app:</b> abrila en Safari, tocá Compartir <b>⬆</b> y elegí <b>«Agregar a inicio»</b>.</span>' + (!/Safari\//.test(UA) ? '<button class="btn sm" style="background:#fff;color:#346CB6" data-act="abrirNav">Abrir en Safari</button>' : '');
+  else return;
+  let b = $('#instBox');
+  if (!b) { b = document.createElement('div'); b.id = 'instBox'; b.style.cssText = 'background:#346CB6;color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap'; document.body.insertBefore(b, app); }
+  b.innerHTML = html + '<button class="btn sm" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.5)" data-act="instNo" aria-label="Cerrar">✕</button>';
+}
+ACT.instalar = async function () { if (!promptInstalar) return; promptInstalar.prompt(); try { await promptInstalar.userChoice; } catch (e) { } promptInstalar = null; const b = $('#instBox'); if (b) b.remove(); };
+ACT.abrirNav = () => abrirEnNavegador();
+ACT.instNo = () => { store.set('inst_no', '1'); const b = $('#instBox'); if (b) b.remove(); };
+setTimeout(barraInstalar, 2500);
 
 /* ---------- Actualización automática ----------
  * Cada vez que se publica una versión nueva cambia «app-ver». La app la busca al abrirse, al volver
@@ -832,7 +868,7 @@ async function verPersonas(head, p) {
     const opt = '<option value="">Todas las obras</option>' + r.obras.map(o => '<option value="' + esc(o.id) + '"' + (o.id === S.persObra ? ' selected' : '') + '>' + esc(o.nombre) + '</option>').join('') + '<option value="_sin"' + (S.persObra === '_sin' ? ' selected' : '') + '>Sin fichar hoy</option>';
     const chips = [['', 'Todos'], ['adentro', 'Trabajando'], ['salio', 'Salieron'], ['ausente', 'Ausentes']].map(c => '<a href="#" data-act="persEst" data-e="' + c[0] + '" class="' + (c[0] === S.persEst ? 'on' : '') + '">' + c[1] + '</a>').join('');
     supShell(head, '<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display ' + (MODO === 'escritorio' ? '" style="font-size:40px' : 't-l') + '">PERSONAS POR OBRA</h1><span class="small muted">' + fechaCorta(fecha) + ' · tocá una persona para ver sus datos</span></div>' +
-      '<input class="inp" type="date" id="psF" value="' + fecha + '" style="height:44px;max-width:180px"></div>' +
+      '<div class="row" style="gap:8px"><input class="inp" type="date" id="psF" value="' + fecha + '" style="height:44px;max-width:180px">' + (S.pers && S.pers.puedeEditar ? '<button class="btn sm ok" data-go="personaNueva">+ Nueva persona</button>' : '') + '</div></div>' +
       '<div class="' + (MODO === 'escritorio' ? 'row' : 'stack') + '" style="gap:8px;flex-wrap:wrap"><select class="inp" id="psO" style="height:44px' + (MODO === 'escritorio' ? ';max-width:320px' : '') + '">' + opt + '</select>' +
       '<input class="inp" id="psB" placeholder="Buscar por nombre o legajo" style="height:44px' + (MODO === 'escritorio' ? ';max-width:320px' : '') + '"></div>' +
       '<nav class="tabs" id="psE">' + chips + '</nav><div id="psRes"></div><div id="psL" class="stack" style="gap:14px"></div>');
@@ -873,6 +909,39 @@ ACT.persBaja = async function (b) {
   try { const r = await api('personaBaja', { legajo: b.dataset.l }); toast(b.dataset.n + ' quedó dado de baja' + (r.sesionesCerradas ? ' · ' + r.sesionesCerradas + ' sesión cerrada' : '') + '.', 5000); go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' }); }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
+/* Alta de una persona sin Excel. */
+V.personaNueva = function () {
+  if (!S.pers || !S.pers.puedeEditar) return go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' });
+  const ps = S.pers.personas || [];
+  const lista = (id, vals) => '<datalist id="' + id + '">' + [...new Set(vals.filter(Boolean))].sort().map(v => '<option value="' + esc(v) + '">').join('') + '</datalist>';
+  const campo = (k, lab, extra) => '<label class="f">' + lab + '<input class="inp" data-k="' + k + '"' + (extra || '') + '></label>';
+  const roles = S.pers.puedeRol ? '<label class="f">Rol<select class="inp" data-k="rol">' + [['empleado', 'Empleado'], ['capataz', 'Capataz'], ['oficina', 'Oficina'], ['supervisor', 'Supervisor'], ['jefe', 'Jefe de obra'], ['rrhh', 'RRHH'], ['gerencia', 'Gerencia']].concat(S.user.rol === 'admin' ? [['admin', 'Administrador']] : []).map(r => '<option value="' + r[0] + '">' + r[1] + '</option>').join('') + '</select></label>' : '';
+  shell('<div class="row" style="justify-content:flex-start"><button class="btn sm" data-act="volverPers" aria-label="Volver">‹</button><h1 class="h-display t-l">NUEVA PERSONA</h1></div>' +
+    '<div class="card stack" id="pnF" style="gap:10px">' +
+    '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' +
+    campo('legajo', 'Número de legajo *', ' inputmode="numeric" placeholder="0123"') +
+    campo('nombre', 'Apellido y nombre *', ' placeholder="PÉREZ JUAN CARLOS"') +
+    campo('pin', 'PIN: últimos 4 números del DNI *', ' inputmode="numeric" maxlength="4" placeholder="1234"') +
+    campo('telefono', 'Teléfono', ' type="tel" placeholder="11 5555-5555"') +
+    campo('categoria', 'Categoría', ' list="dlCat"') + lista('dlCat', ps.map(p => p.categoria)) +
+    '<label class="f">Grupo<select class="inp" data-k="grupo"><option></option><option>Propio</option><option>Subc</option></select></label>' +
+    campo('contratista', 'Contratista', ' list="dlCon"') + lista('dlCon', ps.map(p => p.contratista)) +
+    '<label class="f">Obra asignada<select class="inp" data-k="obra_asignada"><option value="">Sin obra</option>' + (S.pers.obras || []).map(o => o.nombre).sort().map(n => '<option>' + esc(n) + '</option>').join('') + '</select></label>' +
+    campo('email', 'Email', ' type="email"') +
+    campo('sector', 'Sector', ' list="dlSec"') + lista('dlSec', ps.map(p => p.sector).concat(['Fábrica', 'Almacén', 'Administración', 'Oficina técnica'])) +
+    roles + '</div>' +
+    '<span class="xs muted">* obligatorios. Con su legajo y PIN, la persona entra desde su celular y lo vincula la primera vez.' + (S.pers.puedeRol ? '' : ' Entra como Empleado; el rol lo cambia Gerencia.') + '</span>' +
+    '<button class="btn ok" data-act="pnGuardar">Dar de alta</button></div>');
+};
+ACT.volverPers = () => go(MODO === 'celular' ? 'sup' : 'personas', { tab: 'personas' });
+ACT.pnGuardar = async function (b) {
+  const datos = {}; document.querySelectorAll('#pnF [data-k]').forEach(i => { datos[i.dataset.k] = i.value.trim(); });
+  if (!datos.legajo || !datos.nombre || !/^\d{4}$/.test(datos.pin)) return toast('Completá legajo, apellido y nombre y el PIN de 4 números.');
+  b.disabled = true;
+  try { const r = await api('personaNueva', { datos: datos }); toast(r.nombre + ' quedó dado de alta con el legajo ' + r.legajo + '.', 5000); ACT.volverPers(); }
+  catch (e) { toast(e.message, 5000); b.disabled = false; }
+};
+
 /* Editar datos de una persona (todo salvo nombre y apellido). */
 ACT.persEditar = function (b) {
   const x = (S.pers.personas || []).find(p => p.legajo === b.dataset.l); if (!x) return;
