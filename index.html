@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-29.4">
+<meta name="app-ver" content="2026-10-29.5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -617,15 +617,17 @@ V.listo = function (p) {
     '<div class="row"><span class="muted">Ubicación</span><span>' + (ok && !f.causa ? (f.dist !== '' && f.dist != null ? 'A ' + esc(f.dist) + ' m · dentro de la zona' : 'Registrada') : esc(f.causaTxt)) + '</span></div>' +
     '<div class="row"><span class="muted">Comprobante</span><span>' + esc(f.comprobante) + '</span></div>' +
     '<div class="row"><span class="muted">Estado</span><span style="color:' + (ok ? 'var(--green-text)' : 'var(--amber-text)') + ';font-weight:600">' + (ok ? 'Guardada' : 'Pendiente de aprobación') + '</span></div></div>' +
+    (p.sinPedir > 0 ? '<button class="btn block" id="exLuego" data-act="exLuego" style="display:none;min-height:54px;background:#E8B100;border-color:#B57F00;color:#1d1d1d;font-weight:700;font-size:16px">⏱ SOLICITAR HORAS EXTRA (' + num(p.sinPedir) + ' H)</button>' : '') +
     '<div class="grow"></div>' +
     (p.corridoPosible > 0 ? '<div class="card stack small" style="gap:8px"><span>¿Trabajaste de corrido, sin parar a almorzar? Pedí que te autoricen <b>' + num(p.corridoPosible) + ' h</b>.</span><button class="btn sm" data-act="pedirExtra" data-t="corrido" data-f="' + esc(f.fecha) + '" data-h="' + p.corridoPosible + '">Trabajé de corrido · pedir autorización</button></div>' : '') +
     (f.tipo === 'in' ? '<p class="center small muted" style="margin:0">Al irte, abrí la app y tocá <b>SALIDA</b>. Si te olvidás, a la noche reciben el aviso tu capataz, tu supervisor y tu jefe de obra.</p>' : '') +
-    '<div class="grid2" id="listoBtns"' + (p.sinPedir > 0 ? ' hidden' : '') + '><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
+    '<div class="grid2" id="listoBtns"' + (p.sinPedir > 0 ? ' style="display:none"' : '') + '><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
 };
 /* Salida después de hora: pregunta bien visible, con dos botones grandes. Si no pide, cuentan solo las horas normales. */
 function bloqueExtra(p) {
   if (!(p.sinPedir > 0)) return '';
   const f = p.f, h = num(p.sinPedir);
+  S.listoP = p;
   return '<div class="card stack" id="exBox" style="gap:10px;border:3px solid #B57F00;background:var(--amber-soft)">' +
     '<b style="font-size:20px">¿Hiciste horas extra?</b>' +
     '<span class="small">Fichaste <b>' + h + ' h</b> después del horario de la obra' + (p.fin ? ' (termina a las <b>' + esc(p.fin) + '</b>)' : '') + '. <b>Si no pedís autorización, se toman solo las horas normales.</b></span>' +
@@ -640,12 +642,18 @@ ACT.exSi = async function (b) {
   try {
     await api('pedirExtra', { fecha: b.dataset.f, motivo: m });
     $('#exBox').outerHTML = '<div class="card ok stack small" style="gap:4px"><b>✔ Pedido enviado al supervisor</b><span>Las horas extra suman cuando las aprueben. Lo ves en Mis horas.</span></div>';
-    const lb = $('#listoBtns'); if (lb) lb.hidden = false;
+    const lb = $('#listoBtns'); if (lb) lb.style.display = '';
   } catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'SÍ, PEDIR AUTORIZACIÓN'; }
 };
 ACT.exNo = function () {
-  $('#exBox').outerHTML = '<div class="card stack small" style="gap:4px"><b>Listo: se toman solo las horas normales.</b><span class="muted">Si te equivocaste, podés pedirlo hasta 7 días después desde Mis horas.</span></div>';
-  const lb = $('#listoBtns'); if (lb) lb.hidden = false;
+  $('#exBox').outerHTML = '<div class="card stack small" id="exMsg" style="gap:4px"><b>Listo: se toman solo las horas normales.</b><span class="muted">Si te equivocaste, tocá el botón amarillo de abajo (o pedilo hasta 7 días después desde Mis horas).</span></div>';
+  const lb = $('#listoBtns'); if (lb) lb.style.display = '';
+  const bl = $('#exLuego'); if (bl) bl.style.display = '';
+};
+ACT.exLuego = function () {
+  const m = $('#exMsg'); if (m && S.listoP) m.outerHTML = bloqueExtra(S.listoP);
+  const bl = $('#exLuego'); if (bl) bl.style.display = 'none';
+  const t = $('#exMot'); if (t) t.focus();
 };
 
 /* =====================================================================
