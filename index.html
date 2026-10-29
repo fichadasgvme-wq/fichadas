@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-28.2">
+<meta name="app-ver" content="2026-10-29.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -1168,7 +1168,7 @@ async function verObras(head) {
     const r = await api('obras');
     S.obras = r;
     const lista = r.obras.map((o, i) => '<a href="#" class="item obraIt" data-n="' + esc(normBusq(o.nombre + ' ' + o.id)) + '" data-go="obra" data-p=\'{"i":' + i + '}\' style="text-decoration:none;color:inherit"><div class="row"><b>' + esc(o.nombre) + '</b><span class="xs muted">' + (o.activa ? '' : 'Inactiva') + '</span></div>' +
-      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + (o.horario.turno_noche ? 'día ' + o.dotacion + ' · noche ' + (o.dotacion_noche || 0) : o.dotacion) + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : '') + (o.horario.turno_noche ? ' · turno noche ' + esc(o.horario.tn_ini) + '–' + esc(o.horario.tn_fin) : '') + (o.horario.sab50 ? ' · sáb al 50 %' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
+      '<div class="row small"><span class="' + (o.geo ? '' : 'c-txt') + '" style="' + (o.geo ? 'color:var(--green-text)' : 'color:var(--amber-text)') + '">' + (o.geo ? 'Ubicación cargada' : 'Sin ubicación') + '</span><span class="muted">Dotación ' + (o.horario.turno_noche ? 'día ' + o.dotacion + ' · noche ' + (o.dotacion_noche || 0) : o.dotacion) + ' · ' + esc(o.horario.lv_m_ini) + ' a ' + esc(o.horario.lv_t_fin) + (o.horario.jornada === '44' ? ' · 44 h sin sábado' : o.horario.sab_trabaja ? '' : ' · sábado no laborable') + (o.horario.turno_noche ? ' · turno noche ' + esc(o.horario.tn_ini) + '–' + esc(o.horario.tn_fin) : '') + (o.horario.sab50 ? ' · sáb al 50 %' : '') + '</span></div></a>').join('') || '<div class="card small muted">Todavía no hay obras.</div>';
     supShell(head, '<div class="row"><h1 class="h-display t-l">OBRAS</h1>' + (r.puede.crear ? '<button class="btn sm" data-act="obraNueva">+ Nueva obra</button>' : '') + '</div>' +
       '<input class="inp" id="obBusq" type="search" placeholder="🔍 Buscar obra…" autocomplete="off" value="' + esc(S.obraBusq || '') + '" style="height:46px' + (MODO === 'escritorio' ? ';max-width:420px' : '') + '">' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" id="obLista" style="gap:8px">' + lista + '</div><div class="card small muted" id="obNada" style="display:none">Ninguna obra coincide con la búsqueda.</div>');
@@ -1228,8 +1228,9 @@ V.obra = function (p) {
       '<b class="small" id="hLvTit">' + (h.turno_noche ? 'Turno día · ' : '') + (h.jornada === '44' ? 'Lunes a jueves' : 'Lunes a viernes') + '</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
       '<span class="xs muted">Mañana (inicio y fin) y tarde (inicio y fin). El almuerzo, entre la mañana y la tarde, se descuenta solo.</span>' +
       '<div id="hVie" class="stack" style="gap:8px;' + (h.jornada === '44' ? '' : 'display:none') + '"><b class="small">Viernes · mismo inicio, termina a las</b>' + t('hVf', h.vie_t_fin) + '<span class="xs muted">El sábado no se trabaja: lo que se haga hasta las 13 es extra al 50 % y desde las 13 al 100 %, solo si se autoriza.</span></div>' +
-      '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div></div>' +
-      '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label>' +
+      '<label id="hSabT" class="row small" style="justify-content:flex-start;gap:10px;' + (h.jornada === '44' ? 'display:none' : '') + '"><input type="checkbox" id="hSabSi" style="width:22px;height:22px"' + (h.sab_trabaja ? ' checked' : '') + '><span><b>Se trabaja los sábados</b> · si no se tilda, el sábado es no laborable: lo trabajado va hasta las 13 al 50 % y desde las 13 al 100 %, y queda para aprobar</span></label>' +
+      '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' || !h.sab_trabaja ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div>' +
+      '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label></div>' +
       '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hTN" style="width:22px;height:22px"' + (h.turno_noche ? ' checked' : '') + '><span><b>Turno noche</b> · un segundo grupo con otro horario</span></label>' +
       '<div id="hNoche" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="small">Turno noche</b><div class="grid2">' + t('hNi', h.tn_ini || '21:00') + t('hNci', h.tn_c_ini || '01:00') + t('hNcf', h.tn_c_fin || '02:00') + t('hNf', h.tn_fin || '07:00') + '</div>' +
       '<span class="xs muted">Primer tramo (inicio y corte para cenar) y segundo tramo (vuelta de la cena y fin, al día siguiente). La cena se descuenta sola.</span>' +
@@ -1255,23 +1256,24 @@ async function guardarObra(datos, msg) {
 ACT.guardarDot = () => guardarObra(Object.assign({ dotacion: Number($('#oDot').textContent) }, $('#oDotN') && $('#oDotNBox').style.display !== 'none' ? { dotacion_noche: Number($('#oDotN').textContent) } : {}), 'Dotación guardada.');
 ACT.guardarMails = () => guardarObra({ emails_avisos: $('#oMails').value }, 'Mails guardados.');
 ACT.guardarCoords = () => { const v = $('#oCoords').value.trim(); if (!v) return toast('Pegá las coordenadas o el link.'); guardarObra({ ubicacion: { modo: 'manual', texto: v } }, 'Ubicación guardada.'); };
-ACT.guardarHorario = () => guardarObra({ horario: { jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value, tn_c_ini: $('#hNci').value, tn_c_fin: $('#hNcf').value } }, 'Horario guardado.');
+ACT.guardarHorario = () => guardarObra({ horario: { sab_trabaja: !!($('#hSabSi') && $('#hSabSi').checked), jornada: $('#hModo').value, lv_m_ini: $('#hMi').value, lv_m_fin: $('#hMf').value, lv_t_ini: $('#hTi').value, lv_t_fin: $('#hTf').value, vie_t_fin: $('#hVf').value, sab_ini: $('#hSi').value, sab_fin: $('#hSf').value, sab50: $('#hS50').checked, turno_noche: $('#hTN').checked, tn_ini: $('#hNi').value, tn_fin: $('#hNf').value, tn_c_ini: $('#hNci').value, tn_c_fin: $('#hNcf').value } }, 'Horario guardado.');
 function hMin(v) { const p = String(v || '').split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
 function horarioSemanal() {
   const m = hMin($('#hMf').value) - hMin($('#hMi').value), t = hMin($('#hTf').value) - hMin($('#hTi').value);
-  const tot = $('#hModo').value === '44' ? 4 * (m + t) + m + (hMin($('#hVf').value) - hMin($('#hTi').value)) : 5 * (m + t) + (hMin($('#hSf').value) - hMin($('#hSi').value));
+  const tot = $('#hModo').value === '44' ? 4 * (m + t) + m + (hMin($('#hVf').value) - hMin($('#hTi').value)) : 5 * (m + t) + ($('#hSabSi') && $('#hSabSi').checked ? hMin($('#hSf').value) - hMin($('#hSi').value) : 0);
   $('#hSem').textContent = num(tot / 60) + ' h';
 }
 function horarioEventos() {
   const md = $('#hModo'); if (!md) return;
   md.onchange = () => {
     const c = md.value === '44';
-    $('#hVie').style.display = c ? '' : 'none'; $('#hSab').style.display = c ? 'none' : '';
+    $('#hVie').style.display = c ? '' : 'none'; $('#hSabT').style.display = c ? 'none' : ''; $('#hSab').style.display = c || !$('#hSabSi').checked ? 'none' : '';
     $('#hLvTit').textContent = c ? 'Lunes a jueves' : 'Lunes a viernes';
     if (c && $('#hTf').value <= '17:00') { $('#hTf').value = '18:00'; $('#hVf').value = '17:00'; }
     horarioSemanal();
   };
   ['hMi', 'hMf', 'hTi', 'hTf', 'hVf', 'hSi', 'hSf'].forEach(id => { const x = $('#' + id); if (x) x.oninput = horarioSemanal; });
+  const ss = $('#hSabSi'); if (ss) ss.onchange = () => { $('#hSab').style.display = ss.checked && md.value !== '44' ? '' : 'none'; horarioSemanal(); };
   const tn = $('#hTN'); if (tn) tn.onchange = () => { $('#hNoche').style.display = tn.checked ? '' : 'none'; $('#oDotNBox').style.display = tn.checked ? '' : 'none'; $('#oDotTit').style.display = tn.checked ? '' : 'none'; $('#hLvTit').textContent = (tn.checked ? 'Turno día · ' : '') + (md.value === '44' ? 'Lunes a jueves' : 'Lunes a viernes'); };
 }
 ACT.fijarGps = async function (b) {
