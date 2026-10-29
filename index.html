@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-29.5">
+<meta name="app-ver" content="2026-10-29.6">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -607,6 +607,7 @@ ACT.cambiar = async function (btn) {
 
 V.listo = function (p) {
   const f = p.f, ok = f.estado === 'ok';
+  S.listoP2 = p;
   const tipo = f.tipo === 'in' ? 'ENTRADA' : 'SALIDA';
   shell('<div class="circle" style="width:120px;height:120px;background:' + (ok ? 'var(--green-soft)' : 'var(--amber-soft)') + ';color:' + (ok ? 'var(--green)' : '#B57F00') + '">' + (ok ? ICO.check : ICO.clock) + '</div>' +
     '<div class="center stack" style="gap:6px"><h1 class="h-display t-xl">' + tipo + (ok ? ' REGISTRADA' : ' PENDIENTE') + '</h1>' +
@@ -618,8 +619,8 @@ V.listo = function (p) {
     '<div class="row"><span class="muted">Comprobante</span><span>' + esc(f.comprobante) + '</span></div>' +
     '<div class="row"><span class="muted">Estado</span><span style="color:' + (ok ? 'var(--green-text)' : 'var(--amber-text)') + ';font-weight:600">' + (ok ? 'Guardada' : 'Pendiente de aprobación') + '</span></div></div>' +
     (p.sinPedir > 0 ? '<button class="btn block" id="exLuego" data-act="exLuego" style="display:none;min-height:54px;background:#E8B100;border-color:#B57F00;color:#1d1d1d;font-weight:700;font-size:16px">⏱ SOLICITAR HORAS EXTRA (' + num(p.sinPedir) + ' H)</button>' : '') +
+    (p.corridoPosible > 0 ? '<div id="coBox"><button class="btn block" data-act="coAbrir" style="min-height:54px;background:#346CB6;border-color:#346CB6;color:#fff;font-weight:700;font-size:16px">🍽 TRABAJÉ DE CORRIDO, SIN ALMUERZO (' + num(p.corridoPosible) + ' H)</button></div>' : '') +
     '<div class="grow"></div>' +
-    (p.corridoPosible > 0 ? '<div class="card stack small" style="gap:8px"><span>¿Trabajaste de corrido, sin parar a almorzar? Pedí que te autoricen <b>' + num(p.corridoPosible) + ' h</b>.</span><button class="btn sm" data-act="pedirExtra" data-t="corrido" data-f="' + esc(f.fecha) + '" data-h="' + p.corridoPosible + '">Trabajé de corrido · pedir autorización</button></div>' : '') +
     (f.tipo === 'in' ? '<p class="center small muted" style="margin:0">Al irte, abrí la app y tocá <b>SALIDA</b>. Si te olvidás, a la noche reciben el aviso tu capataz, tu supervisor y tu jefe de obra.</p>' : '') +
     '<div class="grid2" id="listoBtns"' + (p.sinPedir > 0 ? ' style="display:none"' : '') + '><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
 };
@@ -649,6 +650,22 @@ ACT.exNo = function () {
   $('#exBox').outerHTML = '<div class="card stack small" id="exMsg" style="gap:4px"><b>Listo: se toman solo las horas normales.</b><span class="muted">Si te equivocaste, tocá el botón amarillo de abajo (o pedilo hasta 7 días después desde Mis horas).</span></div>';
   const lb = $('#listoBtns'); if (lb) lb.style.display = '';
   const bl = $('#exLuego'); if (bl) bl.style.display = '';
+};
+ACT.coAbrir = function () {
+  const p = S.listoP2 || {};
+  $('#coBox').innerHTML = '<div class="card stack" style="gap:10px;border:3px solid #346CB6;background:var(--accent-soft,#D9E8F8)"><b style="font-size:18px">🍽 ¿Trabajaste de corrido, sin parar a almorzar?</b>' +
+    '<span class="small">Se pide autorización de <b>' + num(p.corridoPosible) + ' h</b>. Si la aprueban, esa hora suma como normal.</span>' +
+    '<textarea class="inp" id="coMot" rows="2" maxlength="300" placeholder="¿Por qué no paraste a almorzar?" style="min-height:60px"></textarea>' +
+    '<button class="btn block" data-act="coSi" style="min-height:54px;background:#346CB6;border-color:#346CB6;color:#fff;font-weight:700">ENVIAR PEDIDO DE CORRIDO</button><button class="btn block" data-act="coNo">Cancelar</button></div>';
+  $('#coMot').focus();
+};
+ACT.coNo = function () { const p = S.listoP2 || {}; $('#coBox').innerHTML = '<button class="btn block" data-act="coAbrir" style="min-height:54px;background:#346CB6;border-color:#346CB6;color:#fff;font-weight:700;font-size:16px">🍽 TRABAJÉ DE CORRIDO, SIN ALMUERZO (' + num(p.corridoPosible) + ' H)</button>'; };
+ACT.coSi = async function (b) {
+  const m = $('#coMot').value.trim(), p = S.listoP2 || {};
+  if (!m) { toast('Contá por qué no paraste a almorzar.'); $('#coMot').focus(); return; }
+  b.disabled = true; b.textContent = 'ENVIANDO…';
+  try { await api('pedirExtra', { fecha: p.f.fecha, motivo: m, tipo: 'corrido' }); $('#coBox').innerHTML = '<div class="card ok stack small" style="gap:4px"><b>✔ Pedido de corrido enviado al supervisor</b><span>La hora suma cuando la aprueben.</span></div>'; }
+  catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'ENVIAR PEDIDO DE CORRIDO'; }
 };
 ACT.exLuego = function () {
   const m = $('#exMsg'); if (m && S.listoP) m.outerHTML = bloqueExtra(S.listoP);
