@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-02.1">
+<meta name="app-ver" content="2026-11-02.2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -258,6 +258,7 @@ function navCel(on) {
 function deskHeader() {
   const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) it.push(['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']);
+  if (S.user.horas) it.push(['horasRes', 'Horas por colaborador']);
   if (S.user.gerencia) it.push(['pin', 'PIN y celulares']);
   return '<header class="top" style="align-items:center;flex-wrap:wrap"><div class="row" style="gap:14px"><img class="logo" src="' + LOGO + '" alt="GVME"><span class="h-display t-m" style="color:var(--accent)">FICHADAS</span></div>' +
     '<div class="row small"><span>' + esc(S.user.nombre) + ' · ' + esc(S.user.rolTxt) + '</span><button class="btn sm" data-act="salir">Salir</button></div></header>' +
@@ -1509,6 +1510,119 @@ function avisoPedidos(n) {
 }
 function volverPin() { if (MODO === 'celular') go('sup', { tab: 'pin' }); else go('pin'); }
 V.pin = () => S.user.gerencia ? verPin('') : go('planilla');
+/* ---------- Horas por colaborador (RRHH, Gerencia y Administrador) ---------- */
+function hrPeriodo(mes, q) {
+  const [y, m] = mes.split('-').map(Number), fin = new Date(y, m, 0).getDate();
+  if (q === '1') return [mes + '-01', mes + '-15'];
+  if (q === '2') return [mes + '-16', mes + '-' + pad(fin)];
+  return [mes + '-01', mes + '-' + pad(fin)];
+}
+function hrIni() {
+  if (S.hr) return S.hr;
+  const d = new Date(); let y = d.getFullYear(), m = d.getMonth() + 1, q;
+  // por defecto: la quincena en curso; en los primeros días, la que acaba de cerrar
+  if (d.getDate() <= 3) { q = '2'; m--; if (!m) { m = 12; y--; } } else if (d.getDate() <= 15) q = '1'; else if (d.getDate() <= 18) q = '1'; else q = '2';
+  const mes = y + '-' + pad(m), [desde, hasta] = hrPeriodo(mes, q);
+  S.hr = { mes: mes, q: q, desde: desde, hasta: hasta, filtro: 'con', obra: '', txt: '', abiertos: {} };
+  return S.hr;
+}
+const hN = x => x ? (Math.round(x * 100) / 100).toLocaleString('es-AR') : '—';
+V.horasRes = async function () {
+  if (!S.user.horas) return go('planilla');
+  const h = hrIni();
+  cargando('Cargando las horas del período…');
+  try {
+    const r = await api('horasResumen', { desde: h.desde, hasta: h.hasta });
+    S.hrData = r;
+    const qs = [['1', '1ª quincena'], ['2', '2ª quincena'], ['m', 'Mes completo'], ['c', 'Otro período']].map(x => '<a href="#" data-act="hrQ" data-q="' + x[0] + '" class="' + (x[0] === h.q ? 'on' : '') + '">' + x[1] + '</a>').join('');
+    const obras = [...new Set(r.personas.flatMap(p => p.obras))].sort();
+    const fil = [['con', 'Con horas'], ['pend', 'Con pendientes'], ['sinsal', 'Sin salida'], ['sin', 'Sin horas'], ['todos', 'Todos']].map(x => '<a href="#" data-act="hrF" data-f="' + x[0] + '" class="' + (x[0] === h.filtro ? 'on' : '') + '">' + x[1] + '</a>').join('');
+    shell('<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display" style="font-size:40px">HORAS POR COLABORADOR</h1><span class="muted">Normales, al 50 %, al 100 % y pendientes de autorizar · del ' + fechaCorta(r.desde) + ' al ' + fechaCorta(r.hasta) + '</span></div>' +
+      '<button class="btn sm" data-act="hrExcel" style="align-self:flex-end">Descargar Excel</button></div>' +
+      '<div class="row" style="gap:10px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end">' +
+      '<label class="f">Mes<input class="inp" type="month" id="hrM" value="' + h.mes + '" style="height:44px;max-width:190px"></label>' +
+      '<nav class="tabs" id="hrQs" style="margin:0">' + qs + '</nav>' +
+      '<span id="hrC" class="row" style="gap:8px;' + (h.q === 'c' ? '' : 'display:none') + '"><label class="f">Desde<input class="inp" type="date" id="hrD" value="' + h.desde + '" style="height:44px"></label><label class="f">Hasta<input class="inp" type="date" id="hrH" value="' + h.hasta + '" style="height:44px"></label><button class="btn sm" data-act="hrVer" style="align-self:flex-end">Ver</button></span></div>' +
+      '<div class="kpis" id="hrK"></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><input class="inp" id="hrB" placeholder="Buscar por nombre o legajo" value="' + esc(h.txt) + '" style="height:44px;max-width:300px">' +
+      '<select class="inp" id="hrO" style="height:44px;max-width:300px"><option value="">Todas las obras</option>' + obras.map(o => '<option' + (o === h.obra ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>' +
+      '<nav class="tabs" id="hrFs">' + fil + '</nav><div id="hrL"></div>' +
+      '<span class="xs muted">Tocá una persona para ver el detalle por día. «Equivalentes» = normales + 50 % × 1,5 + 100 % × 2. Las horas extra cuentan en fracciones de 15 min y las pendientes no suman hasta que se autorizan.</span>');
+    $('#hrM').onchange = e => { if (!e.target.value) return; h.mes = e.target.value; if (h.q === 'c') h.q = '1'; [h.desde, h.hasta] = hrPeriodo(h.mes, h.q); go('horasRes'); };
+    $('#hrB').oninput = e => { h.txt = e.target.value; hrLista(); };
+    $('#hrO').onchange = e => { h.obra = e.target.value; hrLista(); };
+    hrLista();
+  } catch (e) { errorBox(e.message, null, 'horasRes'); }
+};
+function hrFiltradas() {
+  const h = S.hr, q = (h.txt || '').trim().toLowerCase();
+  return S.hrData.personas.filter(p => {
+    if (h.filtro === 'con' && !p.detalle.length) return false;
+    if (h.filtro === 'sin' && p.detalle.length) return false;
+    if (h.filtro === 'pend' && !p.pendientes) return false;
+    if (h.filtro === 'sinsal' && !p.sinSalida) return false;
+    if (h.obra && p.obras.indexOf(h.obra) < 0) return false;
+    if (q && (p.nombre + ' ' + p.legajo).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  }).map(p => {
+    if (!h.obra) return p;
+    // con una obra elegida, los totales son solo de esa obra
+    const d = p.detalle.filter(x => x.obra === h.obra), t = c => Math.round(d.reduce((s, x) => s + x[c], 0) * 100) / 100;
+    const o = Object.assign({}, p, { detalle: d, normales: t('normales'), al50: t('al50'), al100: t('al100'), pendientes: t('pendientes'), sinSalida: d.filter(x => x.estado === 'sin_salida').length, dias: new Set(d.map(x => x.fecha)).size });
+    o.equivalentes = Math.round((o.normales + o.al50 * 1.5 + o.al100 * 2) * 100) / 100; return o;
+  });
+}
+function hrLista() {
+  const h = S.hr, L = hrFiltradas(), t = c => L.reduce((s, p) => s + (p[c] || 0), 0);
+  const kp = (l, v, n, c) => '<div class="kpi"><span class="small muted">' + l + '</span><b style="color:' + (c || 'inherit') + '">' + v + '</b><span class="xs muted">' + n + '</span></div>';
+  $('#hrK').innerHTML = kp('Personas', L.filter(p => p.detalle.length).length, 'con horas en el período') + kp('Normales', hN(t('normales')), 'horas') + kp('Al 50 %', hN(t('al50')), 'horas autorizadas', 'var(--accent)') +
+    kp('Al 100 %', hN(t('al100')), 'horas autorizadas', 'var(--accent)') + kp('Pendientes', hN(t('pendientes')), 'por autorizar', 'var(--amber-text)') + kp('Sin salida', t('sinSalida'), 'jornadas sin fichar la salida', t('sinSalida') ? 'var(--red)' : '');
+  if (!L.length) { $('#hrL').innerHTML = '<div class="card muted">No hay personas con ese filtro.</div>'; return; }
+  const filas = L.map(p => {
+    const k = p.legajo, ab = !!h.abiertos[k];
+    const det = ab ? '<tr><td colspan="11" style="background:var(--bg);padding:8px 14px">' + (p.detalle.length ? '<table class="tbl" style="font-size:13px"><thead><tr><th>Día</th><th>Obra</th><th>Entrada</th><th>Salida</th><th>Normales</th><th>50 %</th><th>100 %</th><th>Pendientes</th><th>Estado</th></tr></thead><tbody>' +
+      p.detalle.map(d => '<tr><td>' + fechaCorta(d.fecha) + '</td><td>' + esc(d.obra) + '</td><td>' + esc(d.entrada || '—') + '</td><td>' + esc(d.salida || (d.estado === 'en_curso' ? 'en obra' : '—')) + '</td><td>' + hN(d.normales) + '</td><td>' + hN(d.al50) + '</td><td>' + hN(d.al100) + '</td><td>' + (d.pendientes ? '<b style="color:var(--amber-text)">' + hN(d.pendientes) + '</b>' + (d.pedidos.length ? '<div class="xs muted">' + d.pedidos.map(esc).join('<br>') + '</div>' : '') : '—') + '</td><td>' + esc(HR_EST[d.estado] || d.estado || '') + '</td></tr>').join('') +
+      '</tbody></table>' : '<span class="muted small">Sin fichadas en el período.</span>') + '</td></tr>' : '';
+    return '<tr style="cursor:pointer" data-act="hrAbrir" data-l="' + esc(k) + '"><td>' + esc(p.legajo) + '</td><td><b>' + (ab ? '▾ ' : '▸ ') + esc(p.nombre) + '</b>' + (p.activo ? '' : ' <span class="xs muted">(baja)</span>') + '</td><td>' + esc(p.categoria || '—') + '</td><td class="small">' + (p.obras.map(esc).join(', ') || '—') + '</td><td>' + (p.dias || '—') + '</td><td>' + hN(p.normales) + '</td><td>' + hN(p.al50) + '</td><td>' + hN(p.al100) + '</td><td><b>' + hN(p.equivalentes) + '</b></td><td>' + (p.pendientes ? '<b style="color:var(--amber-text)">' + hN(p.pendientes) + '</b>' : '—') + '</td><td>' + (p.sinSalida ? '<b style="color:var(--red)">' + p.sinSalida + '</b>' : '—') + '</td></tr>' + det;
+  }).join('');
+  $('#hrL').innerHTML = '<div class="tblwrap"><table class="tbl"><thead><tr><th>Legajo</th><th>Apellido y nombre</th><th>Categoría</th><th>Obras</th><th>Días</th><th>Normales</th><th>50&nbsp;%</th><th>100&nbsp;%</th><th>Equivalentes</th><th>Pendientes</th><th>Sin&nbsp;salida</th></tr></thead><tbody>' + filas +
+    '<tr style="background:var(--bg)"><td></td><td><b>Total (' + L.length + ')</b></td><td></td><td></td><td></td><td><b>' + hN(t('normales')) + '</b></td><td><b>' + hN(t('al50')) + '</b></td><td><b>' + hN(t('al100')) + '</b></td><td><b>' + hN(t('equivalentes')) + '</b></td><td><b>' + hN(t('pendientes')) + '</b></td><td><b>' + (t('sinSalida') || '—') + '</b></td></tr></tbody></table></div>';
+}
+const HR_EST = { completo: 'Completa', sin_salida: 'Sin salida', en_curso: 'En obra', pendiente: 'Con pendientes' };
+ACT.hrAbrir = function (a) { const k = a.dataset.l; S.hr.abiertos[k] = !S.hr.abiertos[k]; hrLista(); };
+ACT.hrF = function (a) { S.hr.filtro = a.dataset.f; document.querySelectorAll('#hrFs a').forEach(x => x.classList.toggle('on', x === a)); hrLista(); };
+ACT.hrQ = function (a) {
+  const h = S.hr; h.q = a.dataset.q;
+  if (h.q === 'c') { document.querySelectorAll('#hrQs a').forEach(x => x.classList.toggle('on', x === a)); $('#hrC').style.display = ''; return; }
+  [h.desde, h.hasta] = hrPeriodo(h.mes, h.q); go('horasRes');
+};
+ACT.hrVer = function () {
+  const d = $('#hrD').value, hh = $('#hrH').value;
+  if (!d || !hh || d > hh) return toast('Elegí desde y hasta.');
+  S.hr.desde = d; S.hr.hasta = hh; S.hr.q = 'c'; go('horasRes');
+};
+ACT.hrExcel = async function () {
+  try {
+    await loadScript(XLSX_URL);
+    const r = S.hrData, h = S.hr, L = hrFiltradas(), wb = XLSX.utils.book_new(), per = 'del ' + r.desde.split('-').reverse().join('/') + ' al ' + r.hasta.split('-').reverse().join('/');
+    const n = x => Math.round((x || 0) * 100) / 100;
+    const res = [['Horas por colaborador · ' + per + (h.obra ? ' · obra ' + h.obra : '')], [],
+      ['Legajo', 'Apellido y nombre', 'Categoría', 'Sector', 'Grupo', 'Contratista', 'Obras', 'Días', 'Normales', 'Al 50 %', 'Al 100 %', 'Equivalentes', 'Pendientes de autorizar', 'Jornadas sin salida']]
+      .concat(L.map(p => [p.legajo, p.nombre, p.categoria, p.sector, p.grupo, p.contratista, p.obras.join(', '), p.dias, n(p.normales), n(p.al50), n(p.al100), n(p.equivalentes), n(p.pendientes), p.sinSalida]));
+    const ws = XLSX.utils.aoa_to_sheet(res); ws['!cols'] = [8, 32, 16, 16, 12, 16, 34, 6, 10, 10, 10, 12, 14, 12].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen');
+    const det = [['Fecha', 'Legajo', 'Apellido y nombre', 'Categoría', 'Obra', 'Entrada', 'Salida', 'Normales', 'Al 50 %', 'Al 100 %', 'Pendientes', 'Estado', 'Pedidos pendientes']];
+    L.forEach(p => p.detalle.forEach(d => det.push([d.fecha.split('-').reverse().join('/'), p.legajo, p.nombre, p.categoria, d.obra, d.entrada, d.salida, n(d.normales), n(d.al50), n(d.al100), n(d.pendientes), HR_EST[d.estado] || d.estado, d.pedidos.join(' · ')])));
+    const wd = XLSX.utils.aoa_to_sheet(det); wd['!cols'] = [11, 8, 32, 16, 28, 8, 8, 10, 10, 10, 11, 14, 40].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, wd, 'Detalle por día');
+    const po = {}; L.forEach(p => p.detalle.forEach(d => { const k = d.obra + '|' + p.legajo, x = po[k] || (po[k] = [d.obra, p.legajo, p.nombre, p.categoria, new Set(), 0, 0, 0, 0]); x[4].add(d.fecha); x[5] += d.normales; x[6] += d.al50; x[7] += d.al100; x[8] += d.pendientes; }));
+    const ob = [['Obra', 'Legajo', 'Apellido y nombre', 'Categoría', 'Días', 'Normales', 'Al 50 %', 'Al 100 %', 'Pendientes']].concat(Object.values(po).sort((a, b) => (a[0] + a[2]).localeCompare(b[0] + b[2])).map(x => [x[0], x[1], x[2], x[3], x[4].size, n(x[5]), n(x[6]), n(x[7]), n(x[8])]));
+    const wo = XLSX.utils.aoa_to_sheet(ob); wo['!cols'] = [28, 8, 32, 16, 6, 10, 10, 10, 11].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, wo, 'Por obra');
+    XLSX.writeFile(wb, 'horas_' + r.desde + '_al_' + r.hasta + (h.obra ? '_' + h.obra.replace(/[^\w]+/g, '_') : '') + '.xlsx');
+  } catch (e) { toast(e.message); }
+};
+
 async function verPin(head) {
   cargando('Cargando pedidos…', MODO === 'celular' ? 'sup' : null);
   try {
