@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-10-29.6">
+<meta name="app-ver" content="2026-11-02.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -1293,10 +1293,11 @@ V.obra = function (p) {
       '<select class="inp" id="hModo" style="height:46px"><option value=""' + (h.jornada === '44' ? '' : ' selected') + '>Lunes a viernes + sábado</option><option value="44"' + (h.jornada === '44' ? ' selected' : '') + '>44 h · lun a jue 9 h, vie 8 h, sin sábado</option></select>' +
       '<b class="small" id="hLvTit">' + (h.turno_noche ? 'Turno día · ' : '') + (h.jornada === '44' ? 'Lunes a jueves' : 'Lunes a viernes') + '</b><div class="grid2">' + t('hMi', h.lv_m_ini) + t('hMf', h.lv_m_fin) + t('hTi', h.lv_t_ini) + t('hTf', h.lv_t_fin) + '</div>' +
       '<span class="xs muted">Mañana (inicio y fin) y tarde (inicio y fin). El almuerzo, entre la mañana y la tarde, se descuenta solo.</span>' +
-      '<div id="hVie" class="stack" style="gap:8px;' + (h.jornada === '44' ? '' : 'display:none') + '"><b class="small">Viernes · mismo inicio, termina a las</b>' + t('hVf', h.vie_t_fin) + '<span class="xs muted">El sábado no se trabaja: lo que se haga hasta las 13 es extra al 50 % y desde las 13 al 100 %, solo si se autoriza.</span></div>' +
-      '<label id="hSabT" class="row small" style="justify-content:flex-start;gap:10px;' + (h.jornada === '44' ? 'display:none' : '') + '"><input type="checkbox" id="hSabSi" style="width:22px;height:22px"' + (h.sab_trabaja ? ' checked' : '') + '><span><b>Se trabaja los sábados</b> · si no se tilda, el sábado es no laborable: lo trabajado va hasta las 13 al 50 % y desde las 13 al 100 %, y queda para aprobar</span></label>' +
-      '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' || !h.sab_trabaja ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div>' +
-      '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label></div>' +
+      '<div id="hVie" class="stack" style="gap:8px;' + (h.jornada === '44' ? '' : 'display:none') + '"><b class="small">Viernes · mismo inicio, termina a las</b>' + t('hVf', h.vie_t_fin) + '<span class="xs muted">Sábado: si no se tilda «Se trabaja los sábados», lo trabajado va al 50 % hasta las 13 y al 100 % desde las 13, y queda para aprobar.</span></div>' +
+      '<label id="hSabT" class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hSabSi" style="width:22px;height:22px"' + (h.sab_trabaja ? ' checked' : '') + '><span><b>Se trabaja los sábados</b> (opcional) · normal hasta completar las 44 h de la semana; sin tilde, el sábado es no laborable</span></label>' +
+      '<div id="hSab" class="stack" style="gap:8px;' + (h.jornada === '44' && !h.sab_trabaja ? 'display:none' : '') + '"><b class="small">Sábado</b><div class="grid2">' + t('hSi', h.sab_ini) + t('hSf', h.sab_fin) + '</div>' +
+      '<span class="xs muted" id="hSabTxt">' + (h.sab_trabaja ? 'Normal hasta completar las 44 h de la semana; si ya las cumplió, al 50 % hasta las 13 y al 100 % desde las 13.' : 'No laborable: si van, se cuenta desde el inicio de la jornada, al 50 % hasta las 13 y al 100 % desde las 13, y queda para aprobar.') + '</span>' +
+      '<label class="row small" id="hS50L" style="justify-content:flex-start;gap:10px;' + (h.sab_trabaja ? '' : 'display:none') + '"><input type="checkbox" id="hS50" style="width:22px;height:22px"' + (h.sab50 ? ' checked' : '') + '><span><b>Sábado al 50 %</b> · las horas del sábado se pagan al 50 %</span></label></div>' +
       '<label class="row small" style="justify-content:flex-start;gap:10px"><input type="checkbox" id="hTN" style="width:22px;height:22px"' + (h.turno_noche ? ' checked' : '') + '><span><b>Turno noche</b> · un segundo grupo con otro horario</span></label>' +
       '<div id="hNoche" class="stack" style="gap:8px;' + (h.turno_noche ? '' : 'display:none') + '"><b class="small">Turno noche</b><div class="grid2">' + t('hNi', h.tn_ini || '21:00') + t('hNci', h.tn_c_ini || '01:00') + t('hNcf', h.tn_c_fin || '02:00') + t('hNf', h.tn_fin || '07:00') + '</div>' +
       '<span class="xs muted">Primer tramo (inicio y corte para cenar) y segundo tramo (vuelta de la cena y fin, al día siguiente). La cena se descuenta sola.</span>' +
@@ -1328,19 +1329,20 @@ function hMin(v) { const p = String(v || '').split(':'); return (Number(p[0]) ||
 function horarioSemanal() {
   const m = hMin($('#hMf').value) - hMin($('#hMi').value), t = hMin($('#hTf').value) - hMin($('#hTi').value);
   const tot = $('#hModo').value === '44' ? 4 * (m + t) + m + (hMin($('#hVf').value) - hMin($('#hTi').value)) : 5 * (m + t) + ($('#hSabSi') && $('#hSabSi').checked ? hMin($('#hSf').value) - hMin($('#hSi').value) : 0);
+  // (en 44 h el sábado opcional no suma al total: solo completa las 44 h si faltan)
   $('#hSem').textContent = num(tot / 60) + ' h';
 }
 function horarioEventos() {
   const md = $('#hModo'); if (!md) return;
   md.onchange = () => {
     const c = md.value === '44';
-    $('#hVie').style.display = c ? '' : 'none'; $('#hSabT').style.display = c ? 'none' : ''; $('#hSab').style.display = c || !$('#hSabSi').checked ? 'none' : '';
+    $('#hVie').style.display = c ? '' : 'none'; $('#hSab').style.display = c && !$('#hSabSi').checked ? 'none' : '';
     $('#hLvTit').textContent = c ? 'Lunes a jueves' : 'Lunes a viernes';
     if (c && $('#hTf').value <= '17:00') { $('#hTf').value = '18:00'; $('#hVf').value = '17:00'; }
     horarioSemanal();
   };
   ['hMi', 'hMf', 'hTi', 'hTf', 'hVf', 'hSi', 'hSf'].forEach(id => { const x = $('#' + id); if (x) x.oninput = horarioSemanal; });
-  const ss = $('#hSabSi'); if (ss) ss.onchange = () => { $('#hSab').style.display = ss.checked && md.value !== '44' ? '' : 'none'; horarioSemanal(); };
+  const ss = $('#hSabSi'); if (ss) ss.onchange = () => { $('#hSab').style.display = ss.checked || md.value !== '44' ? '' : 'none'; $('#hS50L').style.display = ss.checked ? '' : 'none'; $('#hSabTxt').textContent = ss.checked ? 'Normal hasta completar las 44 h de la semana; si ya las cumplió, al 50 % hasta las 13 y al 100 % desde las 13.' : 'No laborable: si van, se cuenta desde el inicio de la jornada, al 50 % hasta las 13 y al 100 % desde las 13, y queda para aprobar.'; horarioSemanal(); };
   const tn = $('#hTN'); if (tn) tn.onchange = () => { $('#hNoche').style.display = tn.checked ? '' : 'none'; $('#oDotNBox').style.display = tn.checked ? '' : 'none'; $('#oDotTit').style.display = tn.checked ? '' : 'none'; $('#hLvTit').textContent = (tn.checked ? 'Turno día · ' : '') + (md.value === '44' ? 'Lunes a jueves' : 'Lunes a viernes'); };
 }
 ACT.fijarGps = async function (b) {
