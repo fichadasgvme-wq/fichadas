@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-02.2">
+<meta name="app-ver" content="2026-11-03.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -459,7 +459,7 @@ ACT.fichar = async function (btn) {
       r = await api('fichar', Object.assign({}, datos, { foto: foto }));
     }
     if (navigator.vibrate) navigator.vibrate(120);
-    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0, corridoPosible: r.corridoPosible || 0, fin: (S.est && S.est.abierta && S.est.abierta.fin) || '' });
+    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0, corridoPosible: r.corridoPosible || 0, fin: (S.est && S.est.abierta && S.est.abierta.fin) || '', tarde: r.tarde || 0, inicio: r.inicio || '' });
   } catch (e) {
     toast(e.message, 6000);
     btn.disabled = false; btn.innerHTML = txt;
@@ -613,7 +613,7 @@ V.listo = function (p) {
   shell('<div class="circle" style="width:120px;height:120px;background:' + (ok ? 'var(--green-soft)' : 'var(--amber-soft)') + ';color:' + (ok ? 'var(--green)' : '#B57F00') + '">' + (ok ? ICO.check : ICO.clock) + '</div>' +
     '<div class="center stack" style="gap:6px"><h1 class="h-display t-xl">' + tipo + (ok ? ' REGISTRADA' : ' PENDIENTE') + '</h1>' +
     '<div class="h-display" style="font-size:64px;color:var(--accent)">' + esc(f.hora) + '</div><div class="muted">' + esc(f.obra) + ' · ' + fechaCorta(f.fecha).toLowerCase() + '</div></div>' +
-    bloqueExtra(p) +
+    bloqueExtra(p) + bloqueTarde(p.tarde, p.inicio, f.fecha) +
     '<div class="card stack small" style="gap:8px">' +
     (p.cerrada ? '<div class="row"><span class="muted">Salida de ' + esc(p.cerrada.obra) + '</span><span>' + esc(p.cerrada.hora) + ' · cerrada sola</span></div>' : '') +
     '<div class="row"><span class="muted">Ubicación</span><span>' + (ok && !f.causa ? (f.dist !== '' && f.dist != null ? 'A ' + esc(f.dist) + ' m · dentro de la zona' : 'Registrada') : esc(f.causaTxt)) + '</span></div>' +
@@ -624,6 +624,58 @@ V.listo = function (p) {
     '<div class="grow"></div>' +
     (f.tipo === 'in' ? '<p class="center small muted" style="margin:0">Al irte, abrí la app y tocá <b>SALIDA</b>. Si te olvidás, a la noche reciben el aviso tu capataz, tu supervisor y tu jefe de obra.</p>' : '') +
     '<div class="grid2" id="listoBtns"' + (p.sinPedir > 0 ? ' style="display:none"' : '') + '><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
+};
+
+/* Llegada tarde: opción de cargar la foto del comprobante (tren, colectivo, médico…). La aprueba el supervisor. */
+function bloqueTarde(min, inicio, fecha) {
+  if (!(min > 0)) return '';
+  return '<div class="card stack" id="taBox" style="gap:10px;border:2px solid var(--amber);background:var(--amber-soft)">' +
+    '<b style="font-size:18px">Llegaste ' + min + ' min tarde</b>' +
+    '<span class="small">La jornada empieza a las <b>' + esc(inicio) + '</b>. Si tuviste un problema (demora del tren o colectivo, turno médico…), cargá la foto del comprobante: si tu supervisor lo aprueba, ese tiempo se cuenta.</span>' +
+    '<button class="btn block" data-act="taAbrir" data-f="' + esc(fecha) + '" style="min-height:52px;font-weight:700;border:2px solid var(--amber-text);color:var(--amber-text);background:#fff">📎 CARGAR COMPROBANTE DE LLEGADA TARDE</button></div>';
+}
+function formTarde(fecha) {
+  return '<div class="stack" id="taForm" style="gap:10px" data-f="' + esc(fecha) + '">' +
+    '<label class="btn block" style="position:relative;overflow:hidden;min-height:52px">📷 SACAR O ELEGIR FOTO DEL COMPROBANTE<input type="file" id="taFile" accept="image/*" capture="environment" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' +
+    '<img id="taPrev" alt="Comprobante" style="display:none;max-height:240px;object-fit:contain;border-radius:10px;background:#000">' +
+    '<textarea class="inp" id="taMot" rows="2" maxlength="300" placeholder="¿Qué pasó? (ej.: demora del tren Sarmiento, 60 min)" style="min-height:60px"></textarea>' +
+    '<button class="btn block ok" data-act="taEnviar" style="min-height:54px;font-weight:700">ENVIAR COMPROBANTE</button></div>';
+}
+ACT.taAbrir = function (b) {
+  const box = b.closest('#taBox') || b.parentElement;
+  b.outerHTML = formTarde(b.dataset.f);
+  S.taFoto = '';
+  if (box && box.scrollIntoView) box.scrollIntoView({ block: 'center' });
+};
+async function achicarFoto(file, max) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => mal(new Error('No se pudo leer la foto.')); i.src = url; });
+    const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.75);
+  } finally { URL.revokeObjectURL(url); }
+}
+document.addEventListener('change', e => { if (e.target && e.target.id === 'taFile') ACT.taFoto(e.target); });
+ACT.taFoto = async function (inp) {
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  try { S.taFoto = await achicarFoto(f, 1400); const im = $('#taPrev'); im.src = S.taFoto; im.style.display = ''; }
+  catch (e) { toast(e.message); }
+};
+ACT.taEnviar = async function (b) {
+  const form = $('#taForm'), m = $('#taMot').value.trim();
+  if (!S.taFoto) return toast('Sacale una foto al comprobante.');
+  if (!m) { toast('Contá qué pasó.'); $('#taMot').focus(); return; }
+  b.disabled = true; b.textContent = 'ENVIANDO…';
+  try {
+    const r = await api('justificarTarde', { fecha: form.dataset.f, motivo: m, foto: S.taFoto.split(',')[1] });
+    S.taFoto = '';
+    const box = form.closest('#taBox') || form.closest('.item') || form;
+    const ok = '<div class="card ok stack small" style="gap:4px"><b>✔ Comprobante enviado al supervisor</b><span>Si lo aprueba, los ' + r.minutos + ' min se cuentan. Lo ves en Mis horas.</span></div>';
+    if (box.id === 'taBox') box.outerHTML = ok; else if (S.view === 'horas') go('horas'); else form.outerHTML = ok;
+  } catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'ENVIAR COMPROBANTE'; }
 };
 /* Salida después de hora: pregunta bien visible, con dos botones grandes. Si no pide, cuentan solo las horas normales. */
 function bloqueExtra(p) {
@@ -799,7 +851,8 @@ V.horas = async function (p) {
       const det = [d.normales ? num(d.normales) + ' normales' : '', d.al50 ? num(d.al50) + ' al 50 %' : '', d.al100 ? num(d.al100) + ' al 100 %' : ''].filter(Boolean).join(' · ');
       const av = d.avisos.map(a => '<div class="xs" style="color:' + (/autorizadas por/.test(a) ? 'var(--green-text)' : /pendiente|Falta|rechazada|no autorizadas/.test(a) ? 'var(--amber-text)' : 'var(--muted)') + '">' + esc(a) + '</div>').join('');
       const sp = d.sinPedir > 0 ? '<div class="xs" style="color:var(--amber-text)">' + num(d.sinPedir) + ' h fuera del horario sin pedir: no suman</div>' + (d.puedePedir ? '<button class="btn sm" style="align-self:flex-start" data-act="pedirExtra" data-f="' + esc(d.fecha) + '" data-h="' + d.sinPedir + '">Pedir autorización (' + num(d.sinPedir) + ' h)</button>' : '') : '';
-      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + '</div>';
+      const ta = d.tarde > 0 ? '<div class="xs" style="color:var(--amber-text)">Llegada tarde: ' + d.tarde + ' min (la jornada empieza a las ' + esc(d.inicio || '') + ')' + (d.tardeJustif === 'pendiente' ? ' · comprobante enviado, falta que lo apruebe el supervisor' : d.tardeJustif === 'aprobada' ? ' · justificada' : d.tardeJustif === 'rechazada' ? ' · comprobante rechazado' : '') + '</div>' + (d.puedeTarde ? '<div class="stack" style="gap:8px"><button class="btn sm" style="align-self:flex-start" data-act="taAbrir" data-f="' + esc(d.fecha) + '">📎 Cargar comprobante de llegada tarde</button></div>' : '') : '';
+      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + ta + '</div>';
     }).join('') : '<div class="card small muted">No hay fichadas en este mes.</div>';
     shell('<div class="row"><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + prev + '"}\' aria-label="Mes anterior">‹</button><h1 class="h-display t-l">MIS HORAS · ' + MESES[m - 1].toUpperCase() + '</h1><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + next + '"}\' aria-label="Mes siguiente">›</button></div>' +
       '<span class="small muted">Cuentan las horas dentro del horario de la obra, con el almuerzo descontado. Si llegaste antes o te quedaste después, pedí la autorización: suman solo si la aprueban.</span>' +
@@ -1095,9 +1148,9 @@ async function verPendientes(head) {
       const sub = it.kind === 'fichada' ? 'Legajo ' + esc(it.legajo) + ' · ' + (it.tipo === 'in' ? 'Entrada' : 'Salida') + ' · ' + fechaCorta(it.fecha) : 'Legajo ' + esc(it.legajo) + ' · ' + fechaCorta(it.fecha) + (it.rango ? ' · ' + esc(it.rango) : '');
       let acc;
       if (it.propia) acc = '<span class="xs muted">Es tuya: la tiene que aprobar otra persona.</span>';
-      else if (it.kind === 'fichada' && it.foto) acc = '<button class="btn sm" data-go="revisar" data-p=\'{"i":' + i + '}\'>' + ICO.cam + ' Revisar foto</button>';
+      else if (it.foto) acc = '<button class="btn sm" data-go="revisar" data-p=\'{"i":' + i + '}\'>' + ICO.cam + (it.kind === 'autorizacion' ? ' Ver comprobante' : ' Revisar foto') + '</button>';
       else acc = '<div class="grid2"><button class="btn sm" data-act="decidir" data-i="' + i + '" data-d="rechazar">Rechazar</button><button class="btn sm ok" data-act="decidir" data-i="' + i + '" data-d="aprobar">Aprobar</button></div>';
-      const sel = !it.propia && !(it.kind === 'fichada' && it.foto), key = it.kind + '|' + it.id;
+      const sel = !it.propia && !it.foto, key = it.kind + '|' + it.id;
       const chk = sel ? '<input type="checkbox" class="pdChk" data-k="' + esc(key) + '" aria-label="Seleccionar" style="width:24px;height:24px;flex:none;margin:0 10px 0 0"' + (S.pendSel.has(key) ? ' checked' : '') + '>' : '';
       return '<div class="item pend"><div class="row"><div class="row" style="justify-content:flex-start;gap:0;min-width:0">' + chk + '<div><b>' + esc(it.nombre) + '</b><div class="xs muted">' + sub + '</div></div></div><span class="h-display t-m">' + (it.kind === 'fichada' ? esc(it.hora) : '+' + num(it.horas) + ' h') + '</span></div>' +
         '<span class="small" style="color:var(--amber-text)">' + esc(it.obra) + ' · ' + esc(it.causaTxt) + '</span>' + (it.motivo ? '<span class="small muted">Motivo: ' + esc(it.motivo) + '</span>' : '') + mapaHtml(it, i) + acc + '</div>';
@@ -1105,7 +1158,7 @@ async function verPendientes(head) {
     const obrasP = [...new Map(r.items.map(it => [it.obra_id || it.obra, it.obra || 'Sin obra'])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
     if (S.pendObra && !obrasP.some(o => o[0] === S.pendObra)) S.pendObra = '';
     const vis = r.items.map((it, i) => [it, i]).filter(([it]) => !S.pendObra || (it.obra_id || it.obra) === S.pendObra);
-    const lote = vis.filter(([it]) => !it.propia && it.kind !== 'revision' && !(it.kind === 'fichada' && it.foto)).map(([it]) => ({ kind: it.kind, id: it.id }));
+    const lote = vis.filter(([it]) => !it.propia && it.kind !== 'revision' && !it.foto).map(([it]) => ({ kind: it.kind, id: it.id }));
     S.pendLote = lote;
     const grupos = {}; vis.forEach(([it, i]) => { (grupos[it.obra || 'Sin obra'] = grupos[it.obra || 'Sin obra'] || []).push(card(it, i)); });
     const filtro = obrasP.length ? '<div class="' + (MODO === 'escritorio' ? 'row' : 'stack') + '" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><select class="inp" id="pdO" style="height:44px' + (MODO === 'escritorio' ? ';max-width:360px' : '') + '"><option value="">Todas las obras (' + r.items.length + ')</option>' + obrasP.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === S.pendObra ? ' selected' : '') + '>' + esc(o[1]) + ' (' + r.items.filter(it => (it.obra_id || it.obra) === o[0]).length + ')</option>').join('') + '</select>' +
@@ -1164,7 +1217,16 @@ V.revisar = async function (p) {
   if (!it) return volverPendientes();
   cargando('Cargando la foto…', MODO === 'celular' ? 'sup' : null);
   try {
-    const r = await api('foto', { id: it.id });
+    const r = await api('foto', { id: it.id, kind: it.kind });
+    if (it.kind === 'autorizacion') {
+      shell('<div class="row" style="justify-content:flex-start"><button class="btn sm" data-act="volverPend" aria-label="Volver">‹</button><h1 class="h-display t-l">COMPROBANTE DE LLEGADA TARDE</h1></div>' +
+        '<div class="row"><div><b style="font-size:18px">' + esc(it.nombre) + '</b><div class="small muted">Legajo ' + esc(it.legajo) + ' · ' + fechaCorta(it.fecha) + ' · ' + esc(it.obra) + '</div></div><span class="h-display t-m" style="color:var(--amber-text)">' + esc(it.causaTxt.split(' · ').pop()) + '</span></div>' +
+        '<div class="card stack small" style="gap:4px"><span class="muted">Qué pasó</span><span>' + esc(it.motivo || '—') + '</span></div>' +
+        '<img class="photo" src="' + r.foto + '" alt="Comprobante" style="max-height:56vh;object-fit:contain;background:#000">' +
+        '<div class="grid2"><button class="btn danger" data-act="decidir" data-i="' + p.i + '" data-d="rechazar">Rechazar</button><button class="btn ok" data-act="decidir" data-i="' + p.i + '" data-d="aprobar">Justificar</button></div>' +
+        '<span class="xs muted center">Si la justificás, el tiempo desde el inicio de la jornada se cuenta como horas normales. Queda registrado quién decidió.</span>');
+      return;
+    }
     let ctl = {}; try { ctl = JSON.parse(it.controles || '{}'); } catch (e) { }
     const chips = (ctl.caras === 1 ? '<span class="tag ok">Una sola cara</span>' : '<span class="tag warn">Cara no verificada automáticamente</span>') + '<span class="tag ok">Foto en vivo</span>';
     const verif = it.causa === 'mismo_equipo';
