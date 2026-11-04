@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-03.1">
+<meta name="app-ver" content="2026-11-03.2">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -631,7 +631,7 @@ function bloqueTarde(min, inicio, fecha) {
   if (!(min > 0)) return '';
   return '<div class="card stack" id="taBox" style="gap:10px;border:2px solid var(--amber);background:var(--amber-soft)">' +
     '<b style="font-size:18px">Llegaste ' + min + ' min tarde</b>' +
-    '<span class="small">La jornada empieza a las <b>' + esc(inicio) + '</b>. Si tuviste un problema (demora del tren o colectivo, turno médico…), cargá la foto del comprobante: si tu supervisor lo aprueba, ese tiempo se cuenta.</span>' +
+    '<span class="small">La jornada empieza a las <b>' + esc(inicio) + '</b>. Si tuviste un problema (demora del tren o colectivo, turno médico…), cargá la foto del comprobante para que tu supervisor justifique la llegada tarde. Se pagan las horas trabajadas desde que fichaste.</span>' +
     '<button class="btn block" data-act="taAbrir" data-f="' + esc(fecha) + '" style="min-height:52px;font-weight:700;border:2px solid var(--amber-text);color:var(--amber-text);background:#fff">📎 CARGAR COMPROBANTE DE LLEGADA TARDE</button></div>';
 }
 function formTarde(fecha) {
@@ -673,7 +673,7 @@ ACT.taEnviar = async function (b) {
     const r = await api('justificarTarde', { fecha: form.dataset.f, motivo: m, foto: S.taFoto.split(',')[1] });
     S.taFoto = '';
     const box = form.closest('#taBox') || form.closest('.item') || form;
-    const ok = '<div class="card ok stack small" style="gap:4px"><b>✔ Comprobante enviado al supervisor</b><span>Si lo aprueba, los ' + r.minutos + ' min se cuentan. Lo ves en Mis horas.</span></div>';
+    const ok = '<div class="card ok stack small" style="gap:4px"><b>✔ Comprobante enviado al supervisor</b><span>Tu supervisor lo revisa y queda como llegada tarde justificada. Lo ves en Mis horas.</span></div>';
     if (box.id === 'taBox') box.outerHTML = ok; else if (S.view === 'horas') go('horas'); else form.outerHTML = ok;
   } catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'ENVIAR COMPROBANTE'; }
 };
@@ -1224,7 +1224,7 @@ V.revisar = async function (p) {
         '<div class="card stack small" style="gap:4px"><span class="muted">Qué pasó</span><span>' + esc(it.motivo || '—') + '</span></div>' +
         '<img class="photo" src="' + r.foto + '" alt="Comprobante" style="max-height:56vh;object-fit:contain;background:#000">' +
         '<div class="grid2"><button class="btn danger" data-act="decidir" data-i="' + p.i + '" data-d="rechazar">Rechazar</button><button class="btn ok" data-act="decidir" data-i="' + p.i + '" data-d="aprobar">Justificar</button></div>' +
-        '<span class="xs muted center">Si la justificás, el tiempo desde el inicio de la jornada se cuenta como horas normales. Queda registrado quién decidió.</span>');
+        '<span class="xs muted center">Justificar acepta el motivo de la llegada tarde, pero se pagan solo las horas trabajadas desde que fichó. Queda registrado quién decidió.</span>');
       return;
     }
     let ctl = {}; try { ctl = JSON.parse(it.controles || '{}'); } catch (e) { }
