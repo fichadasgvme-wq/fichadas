@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-03.2">
+<meta name="app-ver" content="2026-11-04.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -178,8 +178,12 @@ function loadScript(src) { return new Promise((res, rej) => { if (document.query
 async function api(action, data) {
   if (!/^https:\/\//.test(API_URL)) throw new Error('Falta configurar la dirección del sistema (API_URL en index.html).');
   let r;
-  try { r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, token: S.token }, data || {})) }); }
-  catch (e) { throw new Error('Sin conexión. Revisá los datos móviles o el wifi y probá de nuevo.'); }
+  // Si el sistema no contesta, no se queda cargando para siempre: corta a los 40 s (90 s si manda una foto).
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const lim = setTimeout(() => ctl && ctl.abort(), data && data.foto ? 90000 : 40000);
+  try { r = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, token: S.token }, data || {})), signal: ctl ? ctl.signal : undefined }); }
+  catch (e) { clearTimeout(lim); throw new Error(e && e.name === 'AbortError' ? 'El sistema tardó demasiado en responder. Revisá la señal y probá de nuevo.' : 'Sin conexión. Revisá los datos móviles o el wifi y probá de nuevo.'); }
+  clearTimeout(lim);
   let j;
   try { j = await r.json(); } catch (e) { throw new Error('El sistema no respondió bien. Probá de nuevo en un rato.'); }
   if (!j.ok) {
@@ -291,8 +295,15 @@ async function boot() {
   if (!S.token) return go('login');
   cargando('Entrando…');
   try { const r = await api('me'); S.user = r.user; wmUpdate(); go(home()); }
-  catch (e) { if (e.code === 'SESION') { S.token = ''; store.del(TK); go('login'); } else errorBox(e.message, null, 'fichar'); }
+  catch (e) {
+    if (e.code === 'SESION') { S.token = ''; store.del(TK); go('login'); return; }
+    shell('<div class="card bad stack"><b>No se pudo entrar</b><span>' + esc(e.message) + '</span><button class="btn primary" data-act="bootOtraVez">Reintentar</button><button class="btn" data-act="bootSalir">Salir e ingresar de nuevo con legajo y PIN</button></div>');
+  }
 }
+ACT.bootOtraVez = () => boot();
+ACT.bootSalir = () => { S.token = ''; store.del(TK); S.user = null; go('login'); };
+// Si a los 25 s sigue en «Entrando…», ofrece salir sin esperar más.
+setTimeout(() => { if (!S.user && S.token && document.querySelector('#app .loading')) { const l = document.querySelector('#app .loading'); if (l && !l.querySelector('[data-act]')) l.insertAdjacentHTML('beforeend', '<button class="btn" data-act="bootSalir" style="margin-top:14px">¿Tarda mucho? Salir e ingresar de nuevo</button>'); } }, 25000);
 
 /* =====================================================================
  *  Ingreso
