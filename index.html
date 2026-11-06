@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-04.1">
+<meta name="app-ver" content="2026-11-06.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -263,7 +263,7 @@ function deskHeader() {
   const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) it.push(['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']);
   if (S.user.horas) it.push(['horasRes', 'Horas por colaborador']);
-  if (S.user.gerencia) it.push(['pin', 'PIN y celulares']);
+  if (S.user.pin) it.push(['pin', 'PIN y celulares']);
   return '<header class="top" style="align-items:center;flex-wrap:wrap"><div class="row" style="gap:14px"><img class="logo" src="' + LOGO + '" alt="GVME"><span class="h-display t-m" style="color:var(--accent)">FICHADAS</span></div>' +
     '<div class="row small"><span>' + esc(S.user.nombre) + ' · ' + esc(S.user.rolTxt) + '</span><button class="btn sm" data-act="salir">Salir</button></div></header>' +
     '<nav class="tabs">' + it.map(x => '<a href="#" data-go="' + x[0] + '" class="' + (x[0] === S.view ? 'on' : '') + '">' + x[1] + '</a>').join('') + '</nav>';
@@ -896,8 +896,8 @@ V.sup = function (p) {
   if (S.supTab === 'obras' && !S.user.aprueba) S.supTab = 'resumen';
   const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
-  if (S.user.gerencia) tabs.push(['pin', 'Celulares y PIN']);
-  if (S.supTab === 'pin' && !S.user.gerencia) S.supTab = 'resumen';
+  if (S.user.pin) tabs.push(['pin', 'Celulares y PIN']);
+  if (S.supTab === 'pin' && !S.user.pin) S.supTab = 'resumen';
   const head = '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === S.supTab ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
   S.supHead = head;
   if (S.supTab === 'resumen') return verResumen(head);
@@ -1577,12 +1577,12 @@ ACT.impConfirmar = async function (b) {
 };
 
 function avisoPedidos(n) {
-  if (!n || !S.user.gerencia) return '';
+  if (!n || !S.user.pin) return '';
   const dest = MODO === 'celular' ? 'data-go="sup" data-p=\'{"tab":"pin"}\'' : 'data-go="pin"';
   return '<a href="#" ' + dest + ' class="card row" style="text-decoration:none;color:inherit;border-color:var(--amber);background:var(--amber-soft)"><span><b>' + n + ' pedido' + (n > 1 ? 's' : '') + ' de celular o PIN</b><br><span class="small" style="color:var(--amber-text)">Esperan que Gerencia los apruebe</span></span><span style="color:var(--amber-text);font-weight:600">Ver ›</span></a>';
 }
 function volverPin() { if (MODO === 'celular') go('sup', { tab: 'pin' }); else go('pin'); }
-V.pin = () => S.user.gerencia ? verPin('') : go('planilla');
+V.pin = () => S.user.pin ? verPin('') : go('planilla');
 /* ---------- Horas por colaborador (RRHH, Gerencia y Administrador) ---------- */
 function hrPeriodo(mes, q) {
   const [y, m] = mes.split('-').map(Number), fin = new Date(y, m, 0).getDate();
@@ -1706,7 +1706,7 @@ async function verPin(head) {
         '<span class="small muted">' + (pin ? 'Pidió un PIN nuevo. Al asignarlo, avisale el número.' : 'Quiere entrar desde otro celular.' + (p.vinculado ? ' Su celular actual está vinculado desde el ' + esc(p.vinculado) + '.' : '') + ' Al aprobar, se cierra la sesión del celular anterior y puede entrar en el nuevo con su legajo y PIN.') + '</span>' +
         (pin ? '<button class="btn sm ok" data-act="pinAsignar" data-l="' + esc(p.legajo) + '">Asignar PIN nuevo</button>' : '<button class="btn sm ok" data-act="desvincular" data-l="' + esc(p.legajo) + '">Aprobar cambio de celular</button>') + '</div>';
     }).join('') || '<div class="card small muted">No hay pedidos pendientes.</div>';
-    supShell(head, '<div><h1 class="h-display ' + (MODO === 'escritorio' ? '" style="font-size:40px' : 't-l') + '">CELULARES Y PIN</h1><span class="small muted">Solo Gerencia. Cada cambio queda registrado.</span></div>' +
+    supShell(head, '<div><h1 class="h-display ' + (MODO === 'escritorio' ? '" style="font-size:40px' : 't-l') + '">CELULARES Y PIN</h1><span class="small muted">Gerencia y responsables habilitados. Cada cambio queda registrado.</span></div>' +
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px">PEDIDOS PENDIENTES (' + r.pedidos.length + ')</span>' +
       '<div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + cards + '</div>' +
       '<span class="xs muted" style="font-weight:600;letter-spacing:1px;margin-top:8px">SIN PEDIDO</span>' +
