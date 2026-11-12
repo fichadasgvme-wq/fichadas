@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-06.1">
+<meta name="app-ver" content="2026-11-12.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -637,6 +637,24 @@ V.listo = function (p) {
     '<div class="grid2" id="listoBtns"' + (p.sinPedir > 0 ? ' style="display:none"' : '') + '><button class="btn" data-go="horas">Ver mis horas</button><button class="btn" data-go="fichar">Volver</button></div>');
 };
 
+
+/* Salida que no se fichó: el empleado carga la hora y el motivo; el supervisor la aprueba. */
+ACT.saAbrir = function (b) {
+  const f = b.dataset.f, e = b.dataset.e;
+  b.parentElement.innerHTML = '<div class="card stack" style="gap:8px;border:2px solid var(--amber);background:var(--amber-soft)">' +
+    '<b>¿A qué hora saliste el ' + esc(fechaCorta(f)) + '?</b><span class="small">Entraste a las ' + esc(e) + '. Tu supervisor tiene que aprobarlo.</span>' +
+    '<input class="inp" type="time" id="saH_' + f + '" style="height:48px;max-width:180px">' +
+    '<textarea class="inp" id="saM_' + f + '" rows="2" maxlength="300" placeholder="¿Por qué no fichaste la salida? (ej.: me quedé sin batería)" style="min-height:56px"></textarea>' +
+    '<button class="btn ok block" data-act="saEnviar" data-f="' + esc(f) + '" style="min-height:50px;font-weight:700">ENVIAR AL SUPERVISOR</button></div>';
+};
+ACT.saEnviar = async function (b) {
+  const f = b.dataset.f, h = $('#saH_' + f).value, m = $('#saM_' + f).value.trim();
+  if (!h) return toast('Poné la hora de salida.');
+  if (!m) { toast('Contá por qué no fichaste la salida.'); return; }
+  b.disabled = true; b.textContent = 'ENVIANDO…';
+  try { await api('pedirSalida', { fecha: f, hora: h, motivo: m }); toast('Listo: tu supervisor tiene que aprobar la salida de las ' + h + '.', 5000); go('horas'); }
+  catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'ENVIAR AL SUPERVISOR'; }
+};
 /* Llegada tarde: opción de cargar la foto del comprobante (tren, colectivo, médico…). La aprueba el supervisor. */
 function bloqueTarde(min, inicio, fecha) {
   if (!(min > 0)) return '';
@@ -863,7 +881,8 @@ V.horas = async function (p) {
       const av = d.avisos.map(a => '<div class="xs" style="color:' + (/autorizadas por/.test(a) ? 'var(--green-text)' : /pendiente|Falta|rechazada|no autorizadas/.test(a) ? 'var(--amber-text)' : 'var(--muted)') + '">' + esc(a) + '</div>').join('');
       const sp = d.sinPedir > 0 ? '<div class="xs" style="color:var(--amber-text)">' + num(d.sinPedir) + ' h fuera del horario sin pedir: no suman</div>' + (d.puedePedir ? '<button class="btn sm" style="align-self:flex-start" data-act="pedirExtra" data-f="' + esc(d.fecha) + '" data-h="' + d.sinPedir + '">Pedir autorización (' + num(d.sinPedir) + ' h)</button>' : '') : '';
       const ta = d.tarde > 0 ? '<div class="xs" style="color:var(--amber-text)">Llegada tarde: ' + d.tarde + ' min (la jornada empieza a las ' + esc(d.inicio || '') + ')' + (d.tardeJustif === 'pendiente' ? ' · comprobante enviado, falta que lo apruebe el supervisor' : d.tardeJustif === 'aprobada' ? ' · justificada' : d.tardeJustif === 'rechazada' ? ' · comprobante rechazado' : '') + '</div>' + (d.puedeTarde ? '<div class="stack" style="gap:8px"><button class="btn sm" style="align-self:flex-start" data-act="taAbrir" data-f="' + esc(d.fecha) + '">📎 Cargar comprobante de llegada tarde</button></div>' : '') : '';
-      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + ta + '</div>';
+      const sa = d.puedeSalida ? '<div class="stack" style="gap:8px" id="sa_' + d.fecha + '"><button class="btn sm" style="align-self:flex-start;border:2px solid var(--amber-text);color:var(--amber-text)" data-act="saAbrir" data-f="' + esc(d.fecha) + '" data-e="' + esc(d.entrada || '') + '">🕔 Cargar mi hora de salida</button></div>' : '';
+      return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + ta + sa + '</div>';
     }).join('') : '<div class="card small muted">No hay fichadas en este mes.</div>';
     shell('<div class="row"><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + prev + '"}\' aria-label="Mes anterior">‹</button><h1 class="h-display t-l">MIS HORAS · ' + MESES[m - 1].toUpperCase() + '</h1><button class="btn sm" data-go="horas" data-p=\'{"mes":"' + next + '"}\' aria-label="Mes siguiente">›</button></div>' +
       '<span class="small muted">Cuentan las horas dentro del horario de la obra, con el almuerzo descontado. Si llegaste antes o te quedaste después, pedí la autorización: suman solo si la aprueban.</span>' +
