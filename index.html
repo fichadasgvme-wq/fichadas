@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-12.1">
+<meta name="app-ver" content="2026-11-13.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -101,7 +101,7 @@ video.photo{aspect-ratio:3/4;background:#000}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
 #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--fg);color:#fff;padding:12px 18px;border-radius:12px;font-size:15px;z-index:100;max-width:calc(100% - 32px);box-shadow:0 6px 20px rgba(0,0,0,.25)}
 #wmw{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:60}
-#wm{position:absolute;left:-60%;top:-60%;width:220%;height:220%;transform:rotate(-30deg);font-weight:600;font-size:15px;color:var(--fg);opacity:.07;line-height:84px;white-space:nowrap;word-spacing:4px}
+#wm{position:absolute;inset:0;background-repeat:repeat;background-position:0 0;font-size:0;color:transparent}
 .modal{position:fixed;inset:0;background:rgba(10,20,35,.55);display:flex;align-items:flex-end;justify-content:center;z-index:80;padding:12px}
 .modal .sheet{background:#fff;border-radius:16px;max-width:520px;width:100%;max-height:88vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
 details summary{cursor:pointer;font-weight:600}
@@ -198,10 +198,17 @@ async function api(action, data) {
 function gps(fresca) {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('Este navegador no permite tomar la ubicación.'));
-    navigator.geolocation.getCurrentPosition(
-      p => res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) }),
-      e => rej(new Error(e.code === 1 ? 'Tenés que permitir la ubicación para fichar. Revisá los permisos del navegador para esta página.' : 'No pudimos tomar tu ubicación. Activá el GPS y probá de nuevo.')),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: fresca ? 0 : 15000 });
+    let listo = false;
+    const ok = p => { if (listo) return; listo = true; clearTimeout(tope); const x = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy), t: Date.now() }; S.ultPos = x; res(x); };
+    const mal = e => {
+      if (listo) return; listo = true; clearTimeout(tope);
+      // Si el GPS tarda o falla pero hay una ubicación de hace menos de 3 minutos, se usa esa (algunos Android no contestan nunca).
+      if (e.code !== 1 && S.ultPos && Date.now() - S.ultPos.t < 3 * 60000) return res(S.ultPos);
+      rej(new Error(e.code === 1 ? 'Tenés que permitir la ubicación para fichar. Revisá los permisos del navegador para esta página.' : 'No pudimos tomar tu ubicación. Activá el GPS y probá de nuevo.'));
+    };
+    // Tope propio: hay Android que no llaman nunca ni al éxito ni al error.
+    const tope = setTimeout(() => mal({ code: 3 }), fresca ? 16000 : 13000);
+    navigator.geolocation.getCurrentPosition(ok, mal, { enableHighAccuracy: true, timeout: fresca ? 15000 : 12000, maximumAge: fresca ? 10000 : 30000 });
   });
 }
 function gpsMejor(objetivo, esperaMs, onProgreso) {
@@ -220,14 +227,21 @@ function gpsMejor(objetivo, esperaMs, onProgreso) {
 }
 
 /* ---------- marca de agua e inactividad ---------- */
+// Marca de agua liviana: un solo dibujo (SVG) que se repite de fondo, en vez de cientos de textos girados
+// (eso trababa los Android más simples al desplazar la pantalla).
+let wmNombre = null;
 function wmUpdate() {
   const wm = $('#wm');
-  if (!S.user) { wm.innerHTML = ''; return; }
-  const t = esc(S.user.nombre);   // solo nombre y apellido
-  const linea = Array(6).fill('<span>' + t + '</span>').join('&nbsp;&nbsp;&nbsp;&nbsp;');
-  wm.innerHTML = Array(40).fill(linea).join('<br>');
+  const t = S.user ? String(S.user.nombre) : '';   // solo nombre y apellido
+  if (t === wmNombre) return;
+  wmNombre = t;
+  wm.textContent = t;   // queda como texto (oculto) para accesibilidad y pruebas
+  if (!t) { wm.style.backgroundImage = ''; return; }
+  const x = t.replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="170"><text x="150" y="85" text-anchor="middle" transform="rotate(-30 150 85)" ' +
+    'font-family="IBM Plex Sans,Arial,sans-serif" font-size="15" font-weight="600" fill="#15233A" fill-opacity="0.08">' + x + '</text></svg>';
+  wm.style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) + '")';
 }
-setInterval(wmUpdate, 60000);
 let ultimaAccion = Date.now();
 ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ultimaAccion = Date.now(); }, { passive: true }));
 const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
@@ -447,7 +461,7 @@ function estadoTag(st) {
   if (st === 'rechazada') return '<span class="tag bad">Rechazada</span>';
   return '<span class="tag">' + esc(st) + '</span>';
 }
-setInterval(() => { const r = $('#reloj'); if (r) r.textContent = hora(); }, 20000);
+setInterval(() => { if (document.hidden) return; const r = $('#reloj'); if (r) r.textContent = hora(); }, 20000);
 
 ACT.fichar = async function (btn) {
   const obra = $('#fObra') ? $('#fObra').value : '';
