@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-13.1">
+<meta name="app-ver" content="2026-11-16.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -1644,7 +1644,8 @@ V.horasRes = async function () {
     const obras = [...new Set(r.personas.flatMap(p => p.obras))].sort();
     const fil = [['con', 'Con horas'], ['pend', 'Con pendientes'], ['sinsal', 'Sin salida'], ['sin', 'Sin horas'], ['todos', 'Todos']].map(x => '<a href="#" data-act="hrF" data-f="' + x[0] + '" class="' + (x[0] === h.filtro ? 'on' : '') + '">' + x[1] + '</a>').join('');
     shell('<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display" style="font-size:40px">HORAS POR COLABORADOR</h1><span class="muted">Normales, al 50 %, al 100 % y pendientes de autorizar · del ' + fechaCorta(r.desde) + ' al ' + fechaCorta(r.hasta) + '</span></div>' +
-      '<button class="btn sm" data-act="hrExcel" style="align-self:flex-end">Descargar Excel</button></div>' +
+      '<div class="row" style="gap:8px;align-self:flex-end">' + (h.q === '1' || h.q === '2' ? '<button class="btn sm" data-act="hrQuincena" title="La misma planilla que se guarda sola en OneDrive: resumen con feriados y estimadas, por obra, detalle, sueldos estimados y monto por categoría">Quincena completa (con sueldos)</button>' : '') +
+      '<button class="btn sm" data-act="hrExcel">Descargar Excel</button></div></div>' +
       '<div class="row" style="gap:10px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end">' +
       '<label class="f">Mes<input class="inp" type="month" id="hrM" value="' + h.mes + '" style="height:44px;max-width:190px"></label>' +
       '<nav class="tabs" id="hrQs" style="margin:0">' + qs + '</nav>' +
@@ -1706,6 +1707,19 @@ ACT.hrVer = function () {
   const d = $('#hrD').value, hh = $('#hrH').value;
   if (!d || !hh || d > hh) return toast('Elegí desde y hasta.');
   S.hr.desde = d; S.hr.hasta = hh; S.hr.q = 'c'; go('horasRes');
+};
+ACT.hrQuincena = async function (b) {
+  const h = S.hr, per = h.mes + '-' + h.q;
+  b.disabled = true; const t0 = b.textContent; b.textContent = 'Armando la planilla…';
+  try {
+    const r = await api('exportQuincena', { periodo: per });
+    const bin = atob(r.base64), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([u8], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = r.archivo; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  } catch (e) { toast(e.message, 5000); }
+  b.disabled = false; b.textContent = t0;
 };
 ACT.hrExcel = async function () {
   try {
