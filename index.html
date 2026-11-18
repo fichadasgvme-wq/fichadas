@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-17.1">
+<meta name="app-ver" content="2026-11-18.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -248,7 +248,7 @@ function wmUpdate() {
 }
 let ultimaAccion = Date.now();
 ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ultimaAccion = Date.now(); }, { passive: true }));
-const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin'];
+const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin', 'horasRes'];
 setInterval(() => {
   if (!S.user || Date.now() - ultimaAccion < 5 * 60000) return;
   if (MODO_INI === 'escritorio') { salir(false); toast('La sesión se cerró por 5 minutos sin uso.', 6000); }
@@ -931,11 +931,9 @@ V.sup = function (p) {
   S.supTab = (p && p.tab) || S.supTab || 'resumen';
   if (S.supTab === 'pendientes' && !S.user.aprueba) S.supTab = 'resumen';
   if (S.supTab === 'obras' && !S.user.aprueba) S.supTab = 'resumen';
-  const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
-  if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
-  if (S.user.pin) tabs.push(['pin', 'Celulares y PIN']);
   if (S.supTab === 'pin' && !S.user.pin) S.supTab = 'resumen';
-  const head = '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === S.supTab ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
+  if (S.supTab === 'horas') { if (S.user.horas) return go('horasRes'); S.supTab = 'resumen'; }
+  const head = supTabsHtml(S.supTab);
   S.supHead = head;
   if (S.supTab === 'resumen') return verResumen(head);
   if (S.supTab === 'personas') return verPersonas(head, p || {});
@@ -943,6 +941,14 @@ V.sup = function (p) {
   if (S.supTab === 'pin') return verPin(head);
   return verObras(head);
 };
+/* Solapas de Supervisión en el celular (Gerencia y RRHH también ven «Horas», igual que en la PC). */
+function supTabsHtml(activa) {
+  const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
+  if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
+  if (S.user.horas) tabs.push(['horas', 'Horas']);
+  if (S.user.pin) tabs.push(['pin', 'Celulares y PIN']);
+  return '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === activa ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
+}
 function supShell(head, html) { shell((MODO === 'celular' ? head : '') + html, MODO === 'celular' ? 'sup' : null); }
 
 /* Escritorio: los mismos botones en la planilla resumen, más «Sin salida ayer». */
@@ -1638,16 +1644,18 @@ function hrIni() {
 }
 const hN = x => x ? (Math.round(x * 100) / 100).toLocaleString('es-AR') : '—';
 V.horasRes = async function () {
-  if (!S.user.horas) return go('planilla');
+  if (!S.user.horas) return go(MODO === 'celular' ? 'sup' : 'planilla');
   const h = hrIni();
-  cargando('Cargando las horas del período…');
+  // En el celular se ve dentro de Supervisión, con sus solapas.
+  const cel = MODO === 'celular', pre = cel ? supTabsHtml('horas') : '', nav = cel ? 'sup' : undefined;
+  cargando('Cargando las horas del período…', nav);
   try {
     const r = await api('horasResumen', { desde: h.desde, hasta: h.hasta });
     S.hrData = r;
     const qs = [['1', '1ª quincena'], ['2', '2ª quincena'], ['m', 'Mes completo'], ['c', 'Otro período']].map(x => '<a href="#" data-act="hrQ" data-q="' + x[0] + '" class="' + (x[0] === h.q ? 'on' : '') + '">' + x[1] + '</a>').join('');
     const obras = [...new Set(r.personas.flatMap(p => p.obras))].sort();
     const fil = [['con', 'Con horas'], ['pend', 'Con pendientes'], ['sinsal', 'Sin salida'], ['sin', 'Sin horas'], ['todos', 'Todos']].map(x => '<a href="#" data-act="hrF" data-f="' + x[0] + '" class="' + (x[0] === h.filtro ? 'on' : '') + '">' + x[1] + '</a>').join('');
-    shell('<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display" style="font-size:40px">HORAS POR COLABORADOR</h1><span class="muted">Normales, al 50 %, al 100 % y pendientes de autorizar · del ' + fechaCorta(r.desde) + ' al ' + fechaCorta(r.hasta) + '</span></div>' +
+    shell(pre + '<div class="row" style="flex-wrap:wrap;gap:10px"><div><h1 class="h-display" style="font-size:' + (cel ? '28' : '40') + 'px">HORAS POR COLABORADOR</h1><span class="muted">Normales, al 50 %, al 100 % y pendientes de autorizar · del ' + fechaCorta(r.desde) + ' al ' + fechaCorta(r.hasta) + '</span></div>' +
       '<div class="row" style="gap:8px;align-self:flex-end">' + (h.q === '1' || h.q === '2' ? '<button class="btn sm" data-act="hrQuincena" title="La misma planilla que se guarda sola en OneDrive: resumen con feriados y estimadas, por obra, detalle, sueldos estimados y monto por categoría">Quincena completa (con sueldos)</button>' : '') +
       '<button class="btn sm" data-act="hrExcel">Descargar Excel</button></div></div>' +
       '<div class="row" style="gap:10px;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end">' +
@@ -1658,12 +1666,12 @@ V.horasRes = async function () {
       '<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><input class="inp" id="hrB" placeholder="Buscar por nombre o legajo" value="' + esc(h.txt) + '" style="height:44px;max-width:300px">' +
       '<select class="inp" id="hrO" style="height:44px;max-width:300px"><option value="">Todas las obras</option>' + obras.map(o => '<option' + (o === h.obra ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></div>' +
       '<nav class="tabs" id="hrFs">' + fil + '</nav><div id="hrL"></div>' +
-      '<span class="xs muted">Tocá una persona para ver el detalle por día. «Equivalentes» = normales + 50 % × 1,5 + 100 % × 2. Las horas extra cuentan en fracciones de 15 min y las pendientes no suman hasta que se autorizan.</span>');
+      '<span class="xs muted">Tocá una persona para ver el detalle por día. «Equivalentes» = normales + 50 % × 1,5 + 100 % × 2. Las horas extra cuentan en fracciones de 15 min y las pendientes no suman hasta que se autorizan.</span>', nav);
     $('#hrM').onchange = e => { if (!e.target.value) return; h.mes = e.target.value; if (h.q === 'c') h.q = '1'; [h.desde, h.hasta] = hrPeriodo(h.mes, h.q); go('horasRes'); };
     $('#hrB').oninput = e => { h.txt = e.target.value; hrLista(); };
     $('#hrO').onchange = e => { h.obra = e.target.value; hrLista(); };
     hrLista();
-  } catch (e) { errorBox(e.message, null, 'horasRes'); }
+  } catch (e) { errorBox(e.message, nav || null, 'horasRes'); }
 };
 function hrFiltradas() {
   const h = S.hr, q = (h.txt || '').trim().toLowerCase();
