@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-18.1">
+<meta name="app-ver" content="2026-11-19.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -488,7 +488,7 @@ ACT.fichar = async function (btn) {
       r = await api('fichar', Object.assign({}, datos, { foto: foto }));
     }
     if (navigator.vibrate) navigator.vibrate(120);
-    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0, corridoPosible: r.corridoPosible || 0, fin: (S.est && S.est.abierta && S.est.abierta.fin) || '', tarde: r.tarde || 0, inicio: r.inicio || '' });
+    go('listo', { f: r.fichada, sinPedir: r.sinPedir || 0, spAnt: r.spAnt || 0, spExt: r.spExt || 0, corridoPosible: r.corridoPosible || 0, fin: (S.est && S.est.abierta && S.est.abierta.fin) || '', tarde: r.tarde || 0, inicio: r.inicio || '' });
   } catch (e) {
     toast(e.message, 6000);
     btn.disabled = false; btn.innerHTML = txt;
@@ -725,23 +725,33 @@ ACT.taEnviar = async function (b) {
   } catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'ENVIAR COMPROBANTE'; }
 };
 /* Salida después de hora: pregunta bien visible, con dos botones grandes. Si no pide, cuentan solo las horas normales. */
+/* Partes que se pueden pedir: antes del horario (anticipado) y después (extra). Datos viejos sin desglose: las dos juntas. */
+function partesExtra(tot, ant, ext) {
+  ant = Number(ant) || 0; ext = Number(ext) || 0;
+  if (!(ant + ext > 0)) return [{ t: 'anticipado,extra', h: Number(tot) || 0, txt: 'fuera del horario' }];
+  return [ant > 0 ? { t: 'anticipado', h: ant, txt: 'antes del horario (llegué antes)' } : null, ext > 0 ? { t: 'extra', h: ext, txt: 'después del horario (me quedé)' } : null].filter(Boolean);
+}
 function bloqueExtra(p) {
   if (!(p.sinPedir > 0)) return '';
-  const f = p.f, h = num(p.sinPedir);
+  const f = p.f, partes = partesExtra(p.sinPedir, p.spAnt, p.spExt);
   S.listoP = p;
+  const chk = partes.map(x => '<label class="row small" style="justify-content:flex-start;gap:10px;font-size:16px"><input type="checkbox" class="exT" value="' + x.t + '" style="width:26px;height:26px"' + (x.t !== 'anticipado' ? ' checked' : '') + '><span><b>' + num(x.h) + ' h</b> ' + x.txt + '</span></label>').join('');
   return '<div class="card stack" id="exBox" style="gap:10px;border:3px solid #B57F00;background:var(--amber-soft)">' +
     '<b style="font-size:20px">¿Hiciste horas extra?</b>' +
-    '<span class="small">Fichaste <b>' + h + ' h</b> después del horario de la obra' + (p.fin ? ' (termina a las <b>' + esc(p.fin) + '</b>)' : '') + '. <b>Si no pedís autorización, se toman solo las horas normales.</b></span>' +
-    '<textarea class="inp" id="exMot" rows="2" maxlength="300" placeholder="Si las hiciste: ¿qué trabajo hiciste fuera de horario?" style="min-height:60px"></textarea>' +
-    '<button class="btn block" data-act="exSi" data-f="' + esc(f.fecha) + '" style="min-height:58px;background:#B57F00;border-color:#B57F00;color:#fff;font-weight:700;font-size:16px">SÍ, PEDIR AUTORIZACIÓN DE ' + h + ' H EXTRA</button>' +
+    '<span class="small">Fichaste horas fuera del horario de la obra' + (p.fin ? ' (termina a las <b>' + esc(p.fin) + '</b>)' : '') + '. Tildá <b>solo lo que trabajaste de más</b>. <b>Si no pedís autorización, se toman solo las horas normales.</b></span>' +
+    '<div class="stack" style="gap:8px">' + chk + '</div>' +
+    '<textarea class="inp" id="exMot" rows="2" maxlength="300" placeholder="¿Qué trabajo hiciste fuera de horario?" style="min-height:60px"></textarea>' +
+    '<button class="btn block" data-act="exSi" data-f="' + esc(f.fecha) + '" style="min-height:58px;background:#B57F00;border-color:#B57F00;color:#fff;font-weight:700;font-size:16px">SÍ, PEDIR AUTORIZACIÓN DE LO TILDADO</button>' +
     '<button class="btn block" data-act="exNo" style="min-height:50px;font-weight:600">NO, SOLO HORAS NORMALES</button></div>';
 }
 ACT.exSi = async function (b) {
   const m = $('#exMot').value.trim();
+  const tipos = [...document.querySelectorAll('.exT:checked')].map(x => x.value).join(',');
+  if (!tipos) { toast('Tildá qué horas querés pedir.'); return; }
   if (!m) { toast('Contá qué trabajo hiciste fuera de horario.'); $('#exMot').focus(); return; }
   b.disabled = true; b.textContent = 'ENVIANDO…';
   try {
-    await api('pedirExtra', { fecha: b.dataset.f, motivo: m });
+    await api('pedirExtra', { fecha: b.dataset.f, motivo: m, tipos: tipos });
     $('#exBox').outerHTML = '<div class="card ok stack small" style="gap:4px"><b>✔ Pedido enviado al supervisor</b><span>Las horas extra suman cuando las aprueben. Lo ves en Mis horas.</span></div>';
     const lb = $('#listoBtns'); if (lb) lb.style.display = '';
   } catch (e) { toast(e.message, 5000); b.disabled = false; b.textContent = 'SÍ, PEDIR AUTORIZACIÓN'; }
@@ -897,7 +907,7 @@ V.horas = async function (p) {
       const tot = d.normales + d.al50 + d.al100;
       const det = [d.normales ? num(d.normales) + ' normales' : '', d.al50 ? num(d.al50) + ' al 50 %' : '', d.al100 ? num(d.al100) + ' al 100 %' : ''].filter(Boolean).join(' · ');
       const av = d.avisos.map(a => '<div class="xs" style="color:' + (/autorizadas por/.test(a) ? 'var(--green-text)' : /pendiente|Falta|rechazada|no autorizadas/.test(a) ? 'var(--amber-text)' : 'var(--muted)') + '">' + esc(a) + '</div>').join('');
-      const sp = d.sinPedir > 0 ? '<div class="xs" style="color:var(--amber-text)">' + num(d.sinPedir) + ' h fuera del horario sin pedir: no suman</div>' + (d.puedePedir ? '<button class="btn sm" style="align-self:flex-start" data-act="pedirExtra" data-f="' + esc(d.fecha) + '" data-h="' + d.sinPedir + '">Pedir autorización (' + num(d.sinPedir) + ' h)</button>' : '') : '';
+      const sp = d.sinPedir > 0 ? '<div class="xs" style="color:var(--amber-text)">' + num(d.sinPedir) + ' h fuera del horario sin pedir: no suman</div>' + (d.puedePedir ? '<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start">' + partesExtra(d.sinPedir, d.spAnt, d.spExt).map(x => '<button class="btn sm" data-act="pedirExtra" data-f="' + esc(d.fecha) + '" data-h="' + x.h + '" data-tipos="' + x.t + '">' + (x.t === 'anticipado' ? 'Pedir llegada anticipada' : x.t === 'extra' ? 'Pedir horas después del horario' : 'Pedir autorización') + ' (' + num(x.h) + ' h)</button>').join('') + '</div>' : '') : '';
       const ta = d.tarde > 0 ? '<div class="xs" style="color:var(--amber-text)">Llegada tarde: ' + d.tarde + ' min (la jornada empieza a las ' + esc(d.inicio || '') + ')' + (d.tardeJustif === 'pendiente' ? ' · comprobante enviado, falta que lo apruebe el supervisor' : d.tardeJustif === 'aprobada' ? ' · justificada' : d.tardeJustif === 'rechazada' ? ' · comprobante rechazado' : '') + '</div>' + (d.puedeTarde ? '<div class="stack" style="gap:8px"><button class="btn sm" style="align-self:flex-start" data-act="taAbrir" data-f="' + esc(d.fecha) + '">📎 Cargar comprobante de llegada tarde</button></div>' : '') : '';
       const sa = d.puedeSalida ? '<div class="stack" style="gap:8px" id="sa_' + d.fecha + '"><button class="btn sm" style="align-self:flex-start;border:2px solid var(--amber-text);color:var(--amber-text)" data-act="saAbrir" data-f="' + esc(d.fecha) + '" data-e="' + esc(d.entrada || '') + '">🕔 Cargar mi hora de salida</button></div>' : '';
       return '<div class="item"><div class="row"><div><b>' + fechaCorta(d.fecha) + '</b><div class="small muted">' + esc(d.obras.join(', ')) + ' · ' + esc(d.tramos.join(', ')) + '</div></div><div class="h-display t-m">' + (tot ? num(tot) + ' h' : '—') + '</div></div>' + (det ? '<div class="xs" style="color:var(--green-text)">' + det + '</div>' : '') + av + sp + ta + sa + '</div>';
@@ -912,11 +922,11 @@ V.horas = async function (p) {
 };
 ACT.pedirExtra = async function (b) {
   const corrido = b.dataset.t === 'corrido';
-  const m = prompt(corrido ? '¿Por qué trabajaste sin parar a almorzar? (' + num(Number(b.dataset.h)) + ' h)' : '¿Qué trabajo hiciste fuera del horario? (' + num(Number(b.dataset.h)) + ' h)');
+  const m = prompt(corrido ? '¿Por qué trabajaste sin parar a almorzar? (' + num(Number(b.dataset.h)) + ' h)' : (b.dataset.tipos === 'anticipado' ? '¿Qué trabajo hiciste antes del horario? (' : b.dataset.tipos === 'extra' ? '¿Qué trabajo hiciste después del horario? (' : '¿Qué trabajo hiciste fuera del horario? (') + num(Number(b.dataset.h)) + ' h)');
   if (m === null) return;
   if (!m.trim()) return toast('Contá el motivo.');
   b.disabled = true;
-  try { await api('pedirExtra', { fecha: b.dataset.f, motivo: m.trim(), tipo: corrido ? 'corrido' : '' }); toast('Pedido enviado. Te avisamos cuando lo aprueben.', 5000); if (S.view === 'horas') go('horas'); else b.outerHTML = '<span class="small" style="color:var(--green-text)">Pedido enviado ✔</span>'; }
+  try { await api('pedirExtra', Object.assign({ fecha: b.dataset.f, motivo: m.trim(), tipo: corrido ? 'corrido' : '' }, !corrido && b.dataset.tipos ? { tipos: b.dataset.tipos } : {})); toast('Pedido enviado. Te avisamos cuando lo aprueben.', 5000); if (S.view === 'horas') go('horas'); else b.outerHTML = '<span class="small" style="color:var(--green-text)">Pedido enviado ✔</span>'; }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
 ACT.pedirPin = async function () {
@@ -1424,10 +1434,58 @@ V.obra = function (p) {
     '<label class="f">Mails para el aviso de salidas olvidadas (separados por coma)<input class="inp" id="oMails" value="' + esc(o.emails_avisos || '') + '"></label><button class="btn sm" data-act="guardarMails">Guardar mails</button>' +
     '<button class="btn dashed block" data-go="especial" data-p=\'{"i":' + p.i + '}\'>Autorizar una jornada especial (por ej. hormigonado desde las 06:00)</button>' +
     (esp ? '<div class="card stack" style="gap:6px"><b class="small">Jornadas especiales próximas</b>' + esp + '</div>' : '') +
+    '<div class="card stack" id="permBox" style="gap:8px">' + permisosHtml(o) + '</div>' +
     '<span class="xs muted center">Última modificación: ' + esc(o.modificado_por || '—') + ' · ' + esc(o.modificado_at || '') + '</span>');
   horarioEventos();
 };
 ACT.volverObras = volverObras;
+/* Horario especial fijo por persona: p. ej. sale antes martes y jueves por estudio. No cuenta como extra ni pide nada. */
+const DIAS_SEM = [['1', 'L'], ['2', 'M'], ['3', 'X'], ['4', 'J'], ['5', 'V'], ['6', 'S']];
+function diasTxt(d) { const m = { 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' }; return String(d || '').split(',').filter(Boolean).map(x => m[x] || x).join(', '); }
+function permisosHtml(o) {
+  const lista = (o.permisos || []).map(x => '<div class="row small" style="gap:8px;align-items:flex-start"><span><b>' + esc(x.nombre) + '</b><br><span class="muted">' + diasTxt(x.dias) + ' · ' + (x.ini ? 'entra ' + esc(x.ini) : '') + (x.ini && x.fin ? ' · ' : '') + (x.fin ? 'sale ' + esc(x.fin) : '') + ' · ' + esc(x.motivo) + '</span></span><button class="btn sm" data-act="permBorrar" data-id="' + esc(x.id) + '" aria-label="Quitar">Quitar</button></div>').join('');
+  return '<b class="small">Horario especial fijo por persona</b>' +
+    '<span class="xs muted">Por ejemplo, alguien que sale antes dos días por semana por estudio. Esos días su jornada termina (o empieza) a esa hora: no aparece como extra ni tiene que pedir nada. Se pagan las horas trabajadas.</span>' +
+    (lista ? '<div class="stack" style="gap:8px">' + lista + '</div>' : '') +
+    '<div id="permForm"><button class="btn sm" data-act="permAbrir">+ Cargar horario especial</button></div>';
+}
+ACT.permAbrir = async function () {
+  const box = $('#permForm'), h = S.obraSel.horario || {};
+  box.innerHTML = '<span class="small muted">Cargando personas…</span>';
+  try {
+    const ps = (await api('personalObra', { obra_id: S.obraSel.id })).personas.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    box.innerHTML = '<div class="stack" style="gap:8px;border-top:1px solid var(--line,#ddd);padding-top:8px">' +
+      '<label class="f">Persona<select class="inp" id="pmP" style="height:46px"><option value="">Elegí…</option>' + ps.map(x => '<option value="' + esc(x.legajo) + '">' + esc(x.nombre) + '</option>').join('') + '</select></label>' +
+      '<div class="grid2"><label class="f">Entra a las (vacío = normal)<input class="inp" type="time" id="pmI" style="height:46px"></label><label class="f">Sale a las<input class="inp" type="time" id="pmF" value="15:00" style="height:46px"></label></div>' +
+      '<span class="xs muted">Horario normal de la obra: ' + esc(h.lv_m_ini || '') + ' a ' + esc(h.lv_t_fin || '') + '.</span>' +
+      '<div class="small"><b>Días</b></div><div class="row" style="gap:12px;flex-wrap:wrap;justify-content:flex-start">' + DIAS_SEM.map(d => '<label class="row small" style="gap:6px"><input type="checkbox" class="pmD" value="' + d[0] + '" style="width:24px;height:24px"> ' + d[1] + '</label>').join('') + '</div>' +
+      '<label class="f">Motivo<input class="inp" id="pmM" maxlength="200" placeholder="Ej.: estudio (cursada)"></label>' +
+      '<div class="grid2"><button class="btn sm" data-act="permCancelar">Cancelar</button><button class="btn sm ok" data-act="permGuardar">Guardar</button></div></div>';
+    if (!ps.length) toast('No encontré personas de esta obra en el padrón ni fichadas del último mes.', 5000);
+  } catch (e) { box.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; }
+};
+ACT.permCancelar = function () { $('#permForm').innerHTML = '<button class="btn sm" data-act="permAbrir">+ Cargar horario especial</button>'; };
+function permRefrescar(r) {
+  S.obraSel.permisos = r.permisos || [];
+  if (S.obras && S.obras.obras[S.obraIdx]) S.obras.obras[S.obraIdx].permisos = S.obraSel.permisos;
+  const bx = $('#permBox'); if (bx) bx.innerHTML = permisosHtml(S.obraSel);
+}
+ACT.permGuardar = async function (b) {
+  const d = { obra_id: S.obraSel.id, legajo: $('#pmP').value, ini: $('#pmI').value, fin: $('#pmF').value, dias: [...document.querySelectorAll('.pmD:checked')].map(x => x.value), motivo: $('#pmM').value.trim() };
+  if (!d.legajo) return toast('Elegí la persona.');
+  if (!d.dias.length) return toast('Tildá al menos un día.');
+  if (!d.ini && !d.fin) return toast('Poné la hora de salida.');
+  if (!d.motivo) return toast('Poné el motivo.');
+  b.disabled = true;
+  try { permRefrescar(await api('permisoGuardar', d)); toast('Horario especial guardado.'); }
+  catch (e) { toast(e.message, 6000); b.disabled = false; }
+};
+ACT.permBorrar = async function (b) {
+  if (!confirm('¿Quitar este horario especial? Desde ahora vuelve al horario normal de la obra.')) return;
+  b.disabled = true;
+  try { permRefrescar(await api('permisoBorrar', { id: b.dataset.id })); toast('Horario especial quitado.'); }
+  catch (e) { toast(e.message, 6000); b.disabled = false; }
+};
 function contador(id, v, t) { return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 54px;gap:8px;align-items:center"><button class="btn" data-act="dot" data-d="-1" data-t="' + t + '" aria-label="Restar una persona">−</button><span class="h-display center" style="font-size:36px" id="' + id + '">' + (Number(v) || 0) + '</span><button class="btn" data-act="dot" data-d="1" data-t="' + t + '" aria-label="Sumar una persona">+</button></div>'; }
 ACT.dot = function (b) { const el = $(b.dataset.t === 'n' ? '#oDotN' : '#oDot'); el.textContent = Math.max(0, (Number(el.textContent) || 0) + Number(b.dataset.d)); };
 async function guardarObra(datos, msg) {
