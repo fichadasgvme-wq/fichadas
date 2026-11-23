@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-19.1">
+<meta name="app-ver" content="2026-11-23.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -1213,7 +1213,7 @@ async function verPendientes(head) {
       let acc;
       if (it.propia) acc = '<span class="xs muted">Es tuya: la tiene que aprobar otra persona.</span>';
       else if (it.foto) acc = '<button class="btn sm" data-go="revisar" data-p=\'{"i":' + i + '}\'>' + ICO.cam + (it.kind === 'autorizacion' ? ' Ver comprobante' : ' Revisar foto') + '</button>';
-      else acc = '<div class="grid2"><button class="btn sm" data-act="decidir" data-i="' + i + '" data-d="rechazar">Rechazar</button><button class="btn sm ok" data-act="decidir" data-i="' + i + '" data-d="aprobar">Aprobar</button></div>';
+      else acc = ajusteHtml(it, i) + '<div class="grid2"><button class="btn sm" data-act="decidir" data-i="' + i + '" data-d="rechazar">Rechazar</button><button class="btn sm ok" data-act="decidir" data-i="' + i + '" data-d="aprobar">Aprobar</button></div>';
       const sel = !it.propia && !it.foto, key = it.kind + '|' + it.id;
       const chk = sel ? '<input type="checkbox" class="pdChk" data-k="' + esc(key) + '" aria-label="Seleccionar" style="width:24px;height:24px;flex:none;margin:0 10px 0 0"' + (S.pendSel.has(key) ? ' checked' : '') + '>' : '';
       return '<div class="item pend"><div class="row"><div class="row" style="justify-content:flex-start;gap:0;min-width:0">' + chk + '<div><b>' + esc(it.nombre) + '</b><div class="xs muted">' + sub + '</div></div></div><span class="h-display t-m">' + (it.kind === 'fichada' ? esc(it.hora) : '+' + num(it.horas) + ' h') + '</span></div>' +
@@ -1267,11 +1267,23 @@ ACT.decidirLote = async function (b) {
   try { const r = await api('decidirLote', { items: L, decision: b.dataset.d, obra: obra }); toast((ok ? 'Aprobados: ' : 'Rechazados: ') + r.resueltos + (r.salteados ? ' · ' + r.salteados + ' ya estaban resueltos' : '') + '.', 5000); volverPendientes(); }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
+/* Ajuste de horario antes de aprobar: inicio y fin de la jornada a tomar (vienen con lo fichado). */
+function rangoPartes(it) { const m = String(it.rango || '').match(/(\d{1,2}:\d{2})\D+(\d{1,2}:\d{2})/); return m ? [m[1].padStart(5, '0'), m[2].padStart(5, '0')] : ['', '']; }
+function ajusteHtml(it, i) {
+  if (it.kind !== 'autorizacion' || ['anticipado', 'extra', 'corrido'].indexOf(it.tipo) < 0) return '';
+  const [a, z] = rangoPartes(it);
+  return '<details class="ajD"><summary class="small" style="cursor:pointer;font-weight:600">⏱ Ajustar horario antes de aprobar</summary>' +
+    '<div class="grid2" style="margin-top:8px"><label class="f">Inicio<input class="inp" type="time" id="ajI' + i + '" value="' + esc(a) + '" style="height:44px"></label><label class="f">Fin<input class="inp" type="time" id="ajF' + i + '" value="' + esc(z) + '" style="height:44px"></label></div>' +
+    '<span class="xs muted">Fichó ' + esc(it.rango || '') + '. Si cambiás el inicio o el fin, se aprueban solo las horas dentro de ese horario; lo de afuera queda como no autorizado.</span></details>';
+}
 ACT.decidir = async function (b) {
-  const it = S.pendItems[Number(b.dataset.i)], ok = b.dataset.d === 'aprobar';
-  if (!confirm((ok ? '¿Aprobar' : '¿Rechazar') + ' lo de ' + it.nombre + '?')) return;
+  const i = Number(b.dataset.i), it = S.pendItems[i], ok = b.dataset.d === 'aprobar';
+  const ei = $('#ajI' + i), ef = $('#ajF' + i), [a, z] = rangoPartes(it);
+  const aj = ok && ei && ef && ei.value && ef.value && (ei.value !== a || ef.value !== z) ? { ini: ei.value, fin: ef.value } : null;
+  if (aj && aj.ini >= aj.fin) return toast('El inicio tiene que ser antes del fin.');
+  if (!confirm(aj ? '¿Aprobar lo de ' + it.nombre + ' tomando solo de ' + aj.ini + ' a ' + aj.fin + '?' : (ok ? '¿Aprobar' : '¿Rechazar') + ' lo de ' + it.nombre + '?')) return;
   b.disabled = true;
-  try { await api('decidir', { kind: it.kind, id: it.id, decision: b.dataset.d }); toast(ok ? 'Aprobado.' : 'Rechazado.'); volverPendientes(); }
+  try { const r = await api('decidir', Object.assign({ kind: it.kind, id: it.id, decision: b.dataset.d }, aj || {})); toast(aj ? 'Aprobado con ajuste: ' + num(r.horas) + ' h (de ' + num(r.antes) + ' h).' : ok ? 'Aprobado.' : 'Rechazado.', aj ? 6000 : 3000); volverPendientes(); }
   catch (e) { toast(e.message, 5000); b.disabled = false; }
 };
 function volverPendientes() { if (MODO === 'celular') go('sup', { tab: 'pendientes' }); else go('pendientes'); }
