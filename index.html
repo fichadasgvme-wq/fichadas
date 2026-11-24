@@ -8,7 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#346CB6">
-<meta name="app-ver" content="2026-11-23.1">
+<meta name="app-ver" content="2026-11-24.1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fichadas">
@@ -248,7 +248,7 @@ function wmUpdate() {
 }
 let ultimaAccion = Date.now();
 ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { ultimaAccion = Date.now(); }, { passive: true }));
-const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin', 'horasRes'];
+const VISTAS_SUP = ['sup', 'personas', 'personaNueva', 'revisar', 'obra', 'especial', 'planilla', 'pendientes', 'obras', 'importar', 'pin', 'horasRes', 'consultas', 'parametros'];
 setInterval(() => {
   if (!S.user || Date.now() - ultimaAccion < 5 * 60000) return;
   if (MODO_INI === 'escritorio') { salir(false); toast('La sesión se cerró por 5 minutos sin uso.', 6000); }
@@ -280,7 +280,7 @@ function navCel(on) {
 function deskHeader() {
   const it = [['planilla', 'Planilla resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) it.push(['pendientes', 'Por autorizar'], ['obras', 'Obras'], ['importar', 'Importar personal']);
-  if (S.user.horas) it.push(['horasRes', 'Horas por colaborador']);
+  if (S.user.horas) it.push(['horasRes', 'Horas por colaborador'], ['consultas', 'Consultas y ajustes'], ['parametros', 'Parámetros']);
   if (S.user.pin) it.push(['pin', 'PIN y celulares']);
   return '<header class="top" style="align-items:center;flex-wrap:wrap"><div class="row" style="gap:14px"><img class="logo" src="' + LOGO + '" alt="GVME"><span class="h-display t-m" style="color:var(--accent)">FICHADAS</span></div>' +
     '<div class="row small"><span>' + esc(S.user.nombre) + ' · ' + esc(S.user.rolTxt) + '</span><button class="btn sm" data-act="salir">Salir</button></div></header>' +
@@ -943,6 +943,7 @@ V.sup = function (p) {
   if (S.supTab === 'obras' && !S.user.aprueba) S.supTab = 'resumen';
   if (S.supTab === 'pin' && !S.user.pin) S.supTab = 'resumen';
   if (S.supTab === 'horas') { if (S.user.horas) return go('horasRes'); S.supTab = 'resumen'; }
+  if (S.supTab === 'consultas' || S.supTab === 'parametros') { if (S.user.horas) return go(S.supTab); S.supTab = 'resumen'; }
   const head = supTabsHtml(S.supTab);
   S.supHead = head;
   if (S.supTab === 'resumen') return verResumen(head);
@@ -955,7 +956,7 @@ V.sup = function (p) {
 function supTabsHtml(activa) {
   const tabs = [['resumen', 'Resumen'], ['personas', 'Personas']];
   if (S.user.aprueba) tabs.push(['pendientes', 'Por autorizar'], ['obras', 'Obras']);
-  if (S.user.horas) tabs.push(['horas', 'Horas']);
+  if (S.user.horas) tabs.push(['horas', 'Horas'], ['consultas', 'Consultas'], ['parametros', 'Parámetros']);
   if (S.user.pin) tabs.push(['pin', 'Celulares y PIN']);
   return '<nav class="tabs">' + tabs.map(t => '<a href="#" data-go="sup" data-p=\'{"tab":"' + t[0] + '"}\' class="' + (t[0] === activa ? 'on' : '') + '">' + t[1] + '</a>').join('') + '</nav>';
 }
@@ -1713,6 +1714,138 @@ function hrIni() {
   return S.hr;
 }
 const hN = x => x ? (Math.round(x * 100) / 100).toLocaleString('es-AR') : '—';
+/* =====================================================================
+ *  Consultas y ajustes · Parámetros (Gerencia, RRHH y Administrador)
+ * ===================================================================== */
+const TIPO_AUT = { anticipado: 'Llegada anticipada', extra: 'Después del horario', corrido: 'Almuerzo de corrido', tarde: 'Llegada tarde', salida: 'Salida olvidada' };
+function h2(x) { return (Math.round((Number(x) || 0) * 100) / 100).toLocaleString('es-AR'); }
+function isoMenos(dias) { const d = new Date(Date.now() - dias * 864e5); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function marcoGer(id, titulo, html) {
+  const cel = MODO === 'celular';
+  shell((cel ? supTabsHtml(id) : '') + '<h1 class="h-display" style="font-size:' + (cel ? '28' : '40') + 'px">' + titulo + '</h1>' + html, cel ? 'sup' : undefined);
+}
+V.consultas = async function () {
+  if (!S.user.horas) return go(MODO === 'celular' ? 'sup' : 'planilla');
+  S.cq = S.cq || { legajo: '', desde: isoMenos(14), hasta: hoyISO() };
+  const q = S.cq;
+  cargando('Cargando…', MODO === 'celular' ? 'sup' : undefined);
+  try {
+    const r = await api('consulta', q.legajo ? { legajo: q.legajo, desde: q.desde, hasta: q.hasta } : {});
+    S.cqData = r;
+    const sel = '<select class="inp" id="cqP" style="height:46px"><option value="">Elegí una persona…</option>' + r.personas.map(x => '<option value="' + esc(x.legajo) + '"' + (x.legajo === q.legajo ? ' selected' : '') + '>' + esc(x.nombre) + ' · ' + esc(x.legajo) + '</option>').join('') + '</select>';
+    const filtro = '<div class="card stack" style="gap:8px">' + sel +
+      '<div class="grid2"><label class="f">Desde<input class="inp" type="date" id="cqD" value="' + esc(q.desde) + '"></label><label class="f">Hasta<input class="inp" type="date" id="cqH" value="' + esc(q.hasta) + '"></label></div>' +
+      '<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><button class="btn sm primary" data-act="cqBuscar">Ver</button>' +
+      (q.legajo ? '<button class="btn sm" data-act="cqRecalc">Recalcular el período</button><button class="btn sm" data-act="cqNuevaFecha">+ Cargar fichada en otra fecha</button>' : '') + '</div>' +
+      '<div id="cqx_nueva"></div>' +
+      '<span class="xs muted">Ves fichadas, horas y pedidos día por día. Podés corregir o cargar fichadas, autorizar horas de días pasados y ajustar lo ya aprobado. Todo queda en la auditoría con tu nombre.</span></div>';
+    let cuerpo = '';
+    if (q.legajo) {
+      const t = { n: 0, a: 0, c: 0, sp: 0 };
+      cuerpo = r.dias.length ? r.dias.map(d => cqDia(d, t)).join('') : '<div class="card small muted">No hay fichadas en ese período.</div>';
+      cuerpo = '<div class="card row small" style="flex-wrap:wrap;gap:14px"><b>' + esc(r.persona.nombre) + '</b><span>Normales <b>' + h2(t.n) + '</b></span><span>Al 50 % <b>' + h2(t.a) + '</b></span><span>Al 100 % <b>' + h2(t.c) + '</b></span><span class="muted">Fuera de horario sin autorizar ' + h2(t.sp) + ' h</span></div>' + cuerpo;
+    }
+    marcoGer('consultas', 'CONSULTAS Y AJUSTES', filtro + '<div class="stack" style="gap:10px">' + cuerpo + '</div>');
+  } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, 'consultas'); }
+};
+function cqDia(d, t) {
+  const fer = String(S.cqData.feriados || '').indexOf(d.fecha) >= 0;
+  const fich = d.fichadas.map(f => '<div class="row small" style="gap:8px;flex-wrap:wrap"><span><b>' + (f.tipo === 'in' ? 'Entrada' : 'Salida') + ' ' + esc(f.hora) + '</b> · ' + esc(f.obra) + (f.turno === 'n' ? ' · noche' : '') +
+    (f.estado !== 'ok' ? ' · <span style="color:var(--amber-text)">' + esc(f.estado) + '</span>' : '') + (f.revision ? '<br><span class="xs muted">' + esc(f.revision) + '</span>' : '') + '</span>' +
+    (f.estado !== 'anulada' ? '<span class="row" style="gap:6px"><button class="btn sm" data-act="cqFich" data-id="' + esc(f.id) + '" data-h="' + esc(f.hora) + '">Corregir</button></span>' : '') + '</div><div id="cqx_f' + esc(f.id) + '"></div>').join('');
+  const hs = d.horas.map(h => {
+    t.n += h.normales; t.a += h.al50; t.c += h.al100; t.sp += h.sin_pedir;
+    return '<div class="small" style="color:var(--green-text)">' + esc(h.obra) + ' · ' + esc(h.entrada || '') + ' a ' + esc(h.salida || '—') + ' · <b>' + h2(h.normales) + '</b> normales' + (h.al50 ? ' · <b>' + h2(h.al50) + '</b> al 50 %' : '') + (h.al100 ? ' · <b>' + h2(h.al100) + '</b> al 100 %' : '') + '</div>' +
+      (h.estado === 'sin_salida' ? '<div class="xs" style="color:var(--amber-text)">Sin salida: cargá la salida con «+ Fichada».</div>' : '') +
+      (h.pendientes ? '<div class="xs" style="color:var(--amber-text)">' + h2(h.pendientes) + ' h pendientes de autorizar</div>' : '') +
+      (h.sin_pedir ? '<div class="xs muted">Fuera de horario sin autorizar: ' + h2(h.sin_pedir) + ' h' + (h.sp_ant || h.sp_ext ? ' (antes ' + h2(h.sp_ant) + ' · después ' + h2(h.sp_ext) + ')' : '') + '</div>' : '') +
+      (h.corrido_posible ? '<div class="xs muted">Almuerzo trabajado posible: ' + h2(h.corrido_posible) + ' h</div>' : '');
+  }).join('');
+  const auts = d.auts.filter(a => a.origen !== 'ajuste' || a.estado !== 'rechazada' || a.horas).map(a => '<div class="row small" style="gap:8px;flex-wrap:wrap;align-items:flex-start"><span>' + esc(TIPO_AUT[a.tipo] || a.tipo) + ' · <b>' + h2(a.horas) + ' h</b> · ' + estadoTag(a.estado) +
+    '<br><span class="xs muted">' + esc(a.obra) + (a.decidido_por ? ' · ' + esc(a.decidido_por) : '') + (a.motivo ? ' · ' + esc(String(a.motivo).slice(0, 140)) : '') + '</span></span>' +
+    (['anticipado', 'extra', 'corrido'].indexOf(a.tipo) >= 0 && a.origen !== 'ajuste' ? '<button class="btn sm" data-act="cqAut" data-id="' + esc(a.id) + '" data-f="' + esc(d.fecha) + '">Ajustar</button>' : '') + '</div><div id="cqx_a' + esc(a.id) + '"></div>').join('');
+  return '<div class="card stack" style="gap:6px"><div class="row"><b>' + fechaCorta(d.fecha) + (fer ? ' · feriado' : '') + '</b><span class="row" style="gap:6px"><button class="btn sm" data-act="cqAddF" data-f="' + esc(d.fecha) + '">+ Fichada</button><button class="btn sm" data-act="cqAddA" data-f="' + esc(d.fecha) + '">+ Autorizar horas</button></span></div>' +
+    fich + hs + (auts ? '<div class="stack" style="gap:4px;border-top:1px solid var(--line,#e5e5e5);padding-top:6px">' + auts + '</div>' : '') + '<div id="cqx_d' + esc(d.fecha) + '"></div></div>';
+}
+function cqDiaDe(f) { return (S.cqData.dias || []).filter(d => d.fecha === f)[0] || { fecha: f, fichadas: [], horas: [], auts: [] }; }
+function cqObrasSel(id, sel) { return '<select class="inp" id="' + id + '" style="height:44px">' + S.cqData.obras.map(o => '<option value="' + esc(o.id) + '"' + (o.id === sel ? ' selected' : '') + '>' + esc(o.nombre) + '</option>').join('') + '</select>'; }
+function cqForm(box, html) { document.querySelectorAll('.cqForm').forEach(x => x.remove()); const b = $('#' + box); if (b) b.innerHTML = '<div class="cqForm card stack" style="gap:8px;background:var(--accent-soft,#eef4fb)">' + html + '<button class="btn sm" data-act="cqCerrar">Cancelar</button></div>'; }
+ACT.cqCerrar = () => document.querySelectorAll('.cqForm').forEach(x => x.remove());
+ACT.cqBuscar = function () { S.cq = { legajo: $('#cqP').value, desde: $('#cqD').value, hasta: $('#cqH').value }; if (!S.cq.legajo) return toast('Elegí la persona.'); if (!S.cq.desde || !S.cq.hasta || S.cq.desde > S.cq.hasta) return toast('Revisá el período.'); go('consultas'); };
+ACT.cqRecalc = async function (b) {
+  if (!confirm('¿Recalcular las horas de ' + S.cqData.persona.nombre + ' del ' + fechaCorta(S.cq.desde) + ' al ' + fechaCorta(S.cq.hasta) + ' con los parámetros y horarios actuales?')) return;
+  b.disabled = true; try { await api('recalcularPersona', S.cq); toast('Recalculado.'); go('consultas'); } catch (e) { toast(e.message, 6000); b.disabled = false; }
+};
+ACT.cqFich = function (b) {
+  cqForm('cqx_f' + b.dataset.id, '<b class="small">Corregir fichada</b><label class="f">Hora correcta<input class="inp" type="time" id="cqFh" value="' + esc(b.dataset.h) + '" style="height:44px"></label>' +
+    '<label class="f">Motivo<input class="inp" id="cqFm" maxlength="200" placeholder="Ej.: fichó al llegar, entra a las 8"></label>' +
+    '<div class="grid2"><button class="btn sm ok" data-act="cqFichOk" data-id="' + esc(b.dataset.id) + '">Guardar hora</button><button class="btn sm" data-act="cqFichAnular" data-id="' + esc(b.dataset.id) + '">Anular fichada</button></div>');
+};
+async function cqEnviar(b, accion, datos, msg) { b.disabled = true; try { const r = await api(accion, datos); toast(typeof msg === 'function' ? msg(r) : msg, 5000); go('consultas'); } catch (e) { toast(e.message, 6000); b.disabled = false; } }
+ACT.cqFichOk = function (b) { const m = $('#cqFm').value.trim(); if (!m) return toast('Poné el motivo.'); cqEnviar(b, 'fichadaCorregir', { id: b.dataset.id, hora: $('#cqFh').value, motivo: m }, 'Fichada corregida y horas recalculadas.'); };
+ACT.cqFichAnular = function (b) { const m = $('#cqFm').value.trim(); if (!m) return toast('Poné el motivo.'); if (!confirm('¿Anular esta fichada? Deja de contar para las horas.')) return; cqEnviar(b, 'fichadaCorregir', { id: b.dataset.id, anular: true, motivo: m }, 'Fichada anulada.'); };
+function cqFormFichada(box, fecha) {
+  const d = cqDiaDe(fecha), ob = (d.horas[0] || d.fichadas[0] || {}).obra_id || '';
+  const ult = d.fichadas.filter(f => f.estado !== 'anulada').slice(-1)[0];
+  cqForm(box, '<b class="small">Cargar fichada' + (fecha ? ' · ' + fechaCorta(fecha) : '') + '</b>' + (fecha ? '' : '<label class="f">Fecha<input class="inp" type="date" id="cqNf" max="' + hoyISO() + '"></label>') +
+    '<div class="grid2"><label class="f">Tipo<select class="inp" id="cqNt" style="height:44px"><option value="in"' + (ult && ult.tipo === 'in' ? '' : ' selected') + '>Entrada</option><option value="out"' + (ult && ult.tipo === 'in' ? ' selected' : '') + '>Salida</option></select></label><label class="f">Hora<input class="inp" type="time" id="cqNh" style="height:44px"></label></div>' +
+    '<label class="f">Obra' + cqObrasSel('cqNo', ob) + '</label><label class="f">Motivo<input class="inp" id="cqNm" maxlength="200" placeholder="Ej.: se olvidó de fichar la salida"></label>' +
+    '<button class="btn sm ok" data-act="cqAddFOk" data-f="' + esc(fecha || '') + '">Guardar fichada</button>');
+}
+ACT.cqAddF = b => cqFormFichada('cqx_d' + b.dataset.f, b.dataset.f);
+ACT.cqNuevaFecha = () => cqFormFichada('cqx_nueva', '');
+ACT.cqAddFOk = function (b) {
+  const f = b.dataset.f || ($('#cqNf') && $('#cqNf').value), d = { legajo: S.cq.legajo, fecha: f, tipo: $('#cqNt').value, hora: $('#cqNh').value, obra_id: $('#cqNo').value, motivo: $('#cqNm').value.trim() };
+  if (!d.fecha) return toast('Elegí la fecha.'); if (!d.hora) return toast('Poné la hora.'); if (!d.motivo) return toast('Poné el motivo.');
+  cqEnviar(b, 'fichadaAgregar', d, 'Fichada cargada y horas recalculadas.');
+};
+function cqRango(fecha, obraId) { const h = cqDiaDe(fecha).horas.filter(x => !obraId || x.obra_id === obraId)[0] || {}; return [String(h.entrada || '').padStart(5, '0'), String(h.salida || '').padStart(5, '0')]; }
+ACT.cqAut = function (b) {
+  const d = cqDiaDe(b.dataset.f), a = d.auts.filter(x => x.id === b.dataset.id)[0], [ini, fin] = cqRango(d.fecha, a.obra_id);
+  cqForm('cqx_a' + a.id, '<b class="small">Ajustar · ' + esc(TIPO_AUT[a.tipo]) + ' (' + h2(a.horas) + ' h, ' + esc(a.estado) + ')</b>' +
+    '<div class="grid2"><label class="f">Inicio<input class="inp" type="time" id="cqAi" value="' + esc(ini) + '" style="height:44px"></label><label class="f">Fin<input class="inp" type="time" id="cqAf" value="' + esc(fin) + '" style="height:44px"></label></div>' +
+    '<span class="xs muted">Se aprueban solo las horas de este tipo dentro de ese horario. Dejá lo fichado para aprobar todo.</span>' +
+    '<label class="f">Motivo<input class="inp" id="cqAm" maxlength="200" placeholder="Ej.: entra a las 8"></label>' +
+    '<div class="grid2"><button class="btn sm ok" data-act="cqAutOk" data-id="' + esc(a.id) + '" data-i="' + esc(ini) + '" data-z="' + esc(fin) + '">Aprobar</button><button class="btn sm" data-act="cqAutNo" data-id="' + esc(a.id) + '">Rechazar</button></div>');
+};
+ACT.cqAutOk = function (b) {
+  const i = $('#cqAi').value, f = $('#cqAf').value, m = $('#cqAm').value.trim(), cambio = i !== b.dataset.i || f !== b.dataset.z;
+  if (cambio && (!i || !f || i >= f)) return toast('Revisá el inicio y el fin.');
+  cqEnviar(b, 'autRevisar', Object.assign({ id: b.dataset.id, accion: 'aprobar', motivo: m }, cambio ? { ini: i, fin: f } : {}), r => 'Aprobado: ' + h2(r.horas) + ' h.');
+};
+ACT.cqAutNo = function (b) { const m = $('#cqAm').value.trim(); if (!m) return toast('Poné el motivo.'); cqEnviar(b, 'autRevisar', { id: b.dataset.id, accion: 'rechazar', motivo: m }, 'Rechazado.'); };
+ACT.cqAddA = function (b) {
+  const d = cqDiaDe(b.dataset.f), ob = (d.horas[0] || {}).obra_id || '', [ini, fin] = cqRango(d.fecha, ob);
+  cqForm('cqx_d' + d.fecha, '<b class="small">Autorizar horas · ' + fechaCorta(d.fecha) + '</b>' +
+    '<div class="grid2"><label class="f">Qué horas<select class="inp" id="cqTt" style="height:44px"><option value="extra">Después del horario</option><option value="anticipado">Llegada anticipada</option><option value="corrido">Almuerzo de corrido</option></select></label><label class="f">Obra' + cqObrasSel('cqTo', ob) + '</label></div>' +
+    '<div class="grid2"><label class="f">Inicio<input class="inp" type="time" id="cqTi" value="' + esc(ini) + '" style="height:44px"></label><label class="f">Fin<input class="inp" type="time" id="cqTf" value="' + esc(fin) + '" style="height:44px"></label></div>' +
+    '<span class="xs muted">Se calcula con lo fichado ese día: se autorizan las horas de ese tipo dentro del inicio y fin.</span>' +
+    '<label class="f">Motivo<input class="inp" id="cqTm" maxlength="200"></label><button class="btn sm ok" data-act="cqAddAOk" data-f="' + esc(d.fecha) + '">Autorizar</button>');
+};
+ACT.cqAddAOk = function (b) {
+  const d = { legajo: S.cq.legajo, fecha: b.dataset.f, tipo: $('#cqTt').value, obra_id: $('#cqTo').value, ini: $('#cqTi').value, fin: $('#cqTf').value, motivo: $('#cqTm').value.trim() };
+  if (!d.motivo) return toast('Poné el motivo.'); if (d.ini && d.fin && d.ini >= d.fin) return toast('Revisá el inicio y el fin.');
+  if (!d.ini || !d.fin) { delete d.ini; delete d.fin; }
+  cqEnviar(b, 'autAgregar', d, r => 'Autorizadas ' + h2(r.horas) + ' h.');
+};
+V.parametros = async function () {
+  if (!S.user.horas) return go(MODO === 'celular' ? 'sup' : 'planilla');
+  cargando('Cargando parámetros…', MODO === 'celular' ? 'sup' : undefined);
+  try {
+    const r = await api('paramsGet', {});
+    const filas = r.params.map(p => '<div class="card stack" style="gap:6px"><span class="small"><b>' + esc(p.txt) + '</b></span>' +
+      (p.valor.length > 40 || p.clave === 'feriados' ? '<textarea class="inp" id="pp_' + p.clave + '" rows="2">' + esc(p.valor) + '</textarea>' : '<input class="inp" id="pp_' + p.clave + '" value="' + esc(p.valor) + '" style="height:44px">') +
+      '<button class="btn sm" style="align-self:flex-start" data-act="ppGuardar" data-k="' + p.clave + '">Guardar</button></div>').join('');
+    marcoGer('parametros', 'PARÁMETROS', '<span class="small muted">Los cambios valen para los cálculos nuevos. Para recalcular días pasados de una persona, usá «Recalcular el período» en Consultas. Cada cambio queda en la auditoría.</span><div class="' + (MODO === 'escritorio' ? 'dgrid' : 'stack') + '" style="gap:10px">' + filas + '</div>');
+  } catch (e) { errorBox(e.message, MODO === 'celular' ? 'sup' : null, 'parametros'); }
+};
+ACT.ppGuardar = async function (b) {
+  const k = b.dataset.k, v = $('#pp_' + k).value;
+  if (!confirm('¿Guardar el cambio de este parámetro?')) return;
+  b.disabled = true;
+  try { const r = await api('paramsGuardar', { clave: k, valor: v }); $('#pp_' + k).value = r.valor; toast(r.sinCambios ? 'No había cambios.' : 'Guardado.'); }
+  catch (e) { toast(e.message, 6000); } b.disabled = false;
+};
 V.horasRes = async function () {
   if (!S.user.horas) return go(MODO === 'celular' ? 'sup' : 'planilla');
   const h = hrIni();
